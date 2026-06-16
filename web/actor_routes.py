@@ -229,7 +229,7 @@ async def actor_profile_display(req):
     tags_json_payload = html.escape(json.dumps(tags_list))
     safe_bio = html.escape(actor.get("bio", ""))
 
-    # ✅ 100% DASHBOARD MATCH STYLES: थंबनेल के ऊपर कड़क बैजेस का लुक और बटन्स का सफ़ाया
+    # ✅ 100% DASHBOARD MATCH LAYOUT & CSS SYNC
     tab_engine_ui = f'''
     <style>
         .actor-tab-bar {{ display: flex; gap: 10px; border-bottom: 2px solid var(--border); margin-bottom: 25px; }}
@@ -242,27 +242,33 @@ async def actor_profile_display(req):
         .gallery-item {{ width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); transition: transform 0.2s; }}
         .gallery-item:hover {{ transform: scale(1.03); }}
         
-        /* ── मुख्य डैशबोर्ड से सिंक की गई कड़क कार्ड्स सीएसएस पाइपलाइन ── */
-        .search-zone-actor {{ display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }}
-        @media(min-width:768px){{ .search-zone-actor {{ flex-direction: row; align-items: center; }} }}
-        .search-wrap-actor {{ flex: 1; min-width: 0; display: flex; align-items: center; background: var(--bg3); border: 1.5px solid var(--border); border-radius: 12px; padding: 0 18px; overflow: hidden; min-height: 38px; }}
-        .search-input-actor {{ width: 100%; background: transparent; border: none; outline: none; color: var(--text); font-size: 14px; font-weight: 600; padding: 6px 0; font-family: inherit; }}
-        .search-btn-actor {{ background: var(--accent); color: #fff; border: none; border-radius: 12px; padding: 0 24px; height: 38px; font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: transform .15s; }}
+        /* ── डैशबोर्ड की रिस्पॉन्सिव संरचना ── */
+        .search-zone-actor {{ padding: 0 0 16px 0; }}
+        .search-row1-actor {{ display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }}
+        .search-row2-actor {{ display: flex; align-items: center; justify-content: flex-start; gap: 10px; margin-bottom: 16px; }}
+        @media(min-width:768px){{
+          .search-zone-actor {{ display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; padding-bottom: 16px; }}
+          .search-row1-actor {{ flex: 1; margin-bottom: 0; }}
+          .search-row2-actor {{ margin-bottom: 0; flex-shrink: 0; }}
+        }}
+        .search-wrap-actor {{ flex: 1; min-width: 0; display: flex; align-items: center; background: var(--bg3); border: 1.5px solid var(--border); border-radius: 12px; padding: 0 6px 0 18px; gap: 8px; overflow: hidden; min-height: 38px; }}
+        .search-input-actor {{ flex: 1; min-width: 0; width: 100%; background: transparent; border: none; outline: none; color: var(--text); font-size: 14px; font-weight: 600; padding: 6px 0; font-family: inherit; }}
+        .search-btn-actor {{ flex-shrink: 0; background: var(--accent); color: #fff; border: none; border-radius: 12px; padding: 0 20px; height: 38px; font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: transform .15s; }}
         .search-btn-actor:hover {{ background: var(--accent-hover); transform: scale(1.03); }}
-        .sel-actor {{ background: var(--bg3); color: var(--text); border: 1.5px solid var(--border); padding: 0 14px; height: 38px; border-radius: 999px; font-size: 11px; font-weight: 700; outline: none; cursor: pointer; font-family: inherit; }}
+        .sel-actor {{ background: var(--bg3); color: var(--text); border: 1.5px solid var(--border); padding: 8px 14px; height: 38px; border-radius: 999px; font-size: 11px; font-weight: 700; outline: none; cursor: pointer; font-family: inherit; }}
         .sel-actor:hover {{ border-color: var(--accent); }}
         
-        .res-grid {{ display: grid; grid-template-columns: 1fr; gap: 14px; margin-bottom: 24px; }}
+        .res-grid {{ display: grid; grid-template-columns: 1fr; gap: 4px; margin-bottom: 24px; }}
         @media(min-width:600px){{ .res-grid {{ grid-template-columns: repeat(3, 1fr); gap: 14px; }} }}
-        .file-card {{ background: var(--card); border-radius: 6px; overflow: hidden; border: 1px solid var(--border); transition: transform .22s cubic-bezier(.4,0,.2,1),box-shadow .22s,border-color .22s; cursor: pointer; }}
+        .file-card {{ background: var(--card); border-radius: 6px; overflow: hidden; border: 1px solid var(--border); transition: transform .22s cubic-bezier(.4,0,.2,1),box-shadow .22s; cursor: pointer; }}
         .file-card:hover {{ transform: translateY(-4px); border-color: rgba(229,9,20,.4); box-shadow: 0 14px 36px rgba(0,0,0,.6); }}
         .poster-box {{ position: relative; padding-top: 56.25%; background: var(--bg3); overflow: hidden; }}
         .fc-poster {{ position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.25s ease-in-out; }}
         .fc-poster.loaded {{ opacity: 1; }}
         
         .poster-top {{ position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 5px; padding: 8px; z-index: 3; }}
-        .type-chip {{ background: rgba(0,0,0,.72); backdrop-filter: blur(8px); color: #fff; border-radius: 5px; padding: 3px 8px; font-size: 10px; font-weight: 800; border: 1px solid rgba(255,255,255,.14); line-height: 1.4; }}
-        .size-chip {{ background: rgba(0,0,0,.60); backdrop-filter: blur(8px); color: #e0e0e0; border-radius: 5px; padding: 3px 8px; font-size: 10px; font-weight: 600; border: 1px solid rgba(255,255,255,.08); line-height: 1.4; }}
+        .type-chip {{ background: rgba(0,0,0,.72); backdrop-filter: blur(8px); color: #fff; border-radius: 5px; padding: 3px 8px; font-size: 10px; font-weight: 800; border: 1px solid rgba(255,255,255,.14); }}
+        .size-chip {{ background: rgba(0,0,0,.60); backdrop-filter: blur(8px); color: #e0e0e0; border-radius: 5px; padding: 3px 8px; font-size: 10px; font-weight: 600; border: 1px solid rgba(255,255,255,.08); }}
         .source-pill {{ margin-left: auto; border-radius: 20px; padding: 3px 8px; font-size: 9px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; backdrop-filter: blur(8px); }}
         .source-pill.primary {{ background: #14532d; color: #4ade80; border: 1px solid #22c55e; }}
         .source-pill.cloud {{ background: #1e3a5f; color: #93c5fd; border: 1px solid #60a5fa; }}
@@ -318,20 +324,24 @@ async def actor_profile_display(req):
 
         <div id="tab-video" class="actor-panel">
             <div class="search-zone-actor">
-                <div class="search-wrap-actor">
-                    <input type="text" id="actor_movie_q" value="{html.escape(actor_name)}" placeholder="Titles, people, genres…" class="search-input-actor">
+                <div class="search-row1-actor">
+                    <div class="search-wrap-actor">
+                        <input type="text" id="actor_movie_q" value="{html.escape(actor_name)}" placeholder="Titles, people, genres…" class="search-input-actor">
+                    </div>
+                    <button onclick="resetActorSearchPage(); triggerActorSearchAjax()" class="search-btn-actor">Search</button>
                 </div>
-                <select id="actor_col_sel" onchange="resetActorSearchPage()" class="sel-actor">
-                    <option value="all">📂 All Collections</option>
-                    <option value="primary">🟢 Primary</option>
-                    <option value="cloud">🔵 Cloud</option>
-                    <option value="archive">🟠 Archive</option>
-                </select>
-                <select id="actor_mode_sel" onchange="resetActorSearchPage()" class="sel-actor">
-                    <option value="tg">🖼️ Original TG Thumb</option>
-                    <option value="none">⚡ Text Only (Fastest)</option>
-                </select>
-                <button onclick="triggerActorSearchAjax()" class="search-btn-actor">Filter</button>
+                <div class="search-row2-actor">
+                    <select id="actor_col_sel" onchange="resetActorSearchPage(); triggerActorSearchAjax()" class="sel-actor">
+                        <option value="all">📂 All Collections</option>
+                        <option value="primary">🟢 Primary</option>
+                        <option value="cloud">🔵 Cloud</option>
+                        <option value="archive">🟠 Archive</option>
+                    </select>
+                    <select id="actor_mode_sel" onchange="resetActorSearchPage(); triggerActorSearchAjax()" class="sel-actor">
+                        <option value="tg">🖼️ Original TG Thumb</option>
+                        <option value="none">⚡ Text Only (Fastest)</option>
+                    </select>
+                </div>
             </div>
 
             <div id="actor_video_results" class="res-grid"></div>
@@ -403,7 +413,7 @@ async def actor_profile_display(req):
         function closeActorEditModal() {{ document.getElementById('actorEditModal').classList.remove('open'); }}
         function resetActorSearchPage() {{ actCurPage = 1; actOffset = 0; }}
 
-        // ✅ शत-प्रतिशत सिंक: अब लोड होने वाले कार्ड्स हूबहू डैशबोर्ड की तरह दिखेंगे (सारे बैजेस के साथ, एडिट/डिलीट बटन गायब)
+        // ✅ कोर फिक्स: जब आप सर्च बॉक्स में कुछ टाइप करेंगे, तब भी यह 'id' पैरामीटर के साथ हमेशा टैग्स को डेटाबेस पाइपलाइन में शामिल रखेगा
         async function triggerActorSearchAjax() {{
             var q = document.getElementById('actor_movie_q').value.trim();
             var col = document.getElementById('actor_col_sel').value;
