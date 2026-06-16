@@ -6,7 +6,7 @@ from aiohttp import web
 from bson.objectid import ObjectId
 from utils import temp, get_size
 from info import BIN_CHANNEL, MAX_WEB_RESULTS
-from database.ia_filterdb import actors, get_search_results
+from database.ia_filterdb import actors, get_actor_search_results
 from web.web_assets import build_page, get_auth, form_wrapper
 
 actor_routes = web.RouteTableDef()
@@ -62,7 +62,7 @@ async def actors_directory_page(req):
     return build_page("Actors Directory - Fast Finder", page_body, "", "actors", role)
 
 # ─────────────────────────────────────────────────────────
-# 🎭 ADMIN VIEW: CREATE ACTOR PROFILE PAGE FORM
+# 🎭 ADMIN VIEW: CREATE ACTOR PROFILE PAGE FORM (WITH TAGS)
 # ─────────────────────────────────────────────────────────
 @actor_routes.get('/admin/create_actor')
 async def create_actor_page(req):
@@ -74,6 +74,9 @@ async def create_actor_page(req):
         <input type="text" name="name" placeholder="Actor Full Name (e.g., Shah Rukh Khan)" required>
         <textarea name="bio" placeholder="Actor Biography / Details..." style="width:100%; background:var(--bg3); border:1px solid var(--border); padding:12px; color:var(--text); border-radius:6px; min-height:100px; outline:none; margin-bottom:15px; font-family:inherit;" required></textarea>
         
+        <div class="scard-label" style="margin-bottom:4px; color:var(--muted);">Search Tags (Comma Separated)</div>
+        <input type="text" name="tags" placeholder="e.g. SRK, Shahrukh, King Khan" style="width:100%; background:var(--bg3); border:1px solid var(--border); padding:12px; color:var(--text); border-radius:6px; margin-bottom:15px; outline:none;">
+
         <div class="scard-label" style="margin-bottom:8px; color:var(--muted);">Actor Profile Photo</div>
         <input type="file" name="photo" accept="image/*" required style="padding:10px 0; color:var(--text);">
         
@@ -93,16 +96,19 @@ async def api_create_actor(req):
         
     try:
         reader = await req.multipart()
-        name, bio, image_bytes = None, None, None
+        name, bio, tags_raw, image_bytes = None, None, "", None
         while True:
             part = await reader.next()
             if part is None: break
             if part.name == 'name': name = (await part.read()).decode().strip()
             elif part.name == 'bio': bio = (await part.read()).decode().strip()
+            elif part.name == 'tags': tags_raw = (await part.read()).decode().strip()
             elif part.name == 'photo': image_bytes = await part.read()
 
         if not name or not bio or not image_bytes:
             return web.HTTPFound('/admin/create_actor?err=All fields are required!')
+
+        tags_list = [t.strip() for t in tags_raw.split(",") if t.strip()]
 
         with io.BytesIO(image_bytes) as img_buffer:
             img_buffer.name = f"{name.replace(' ', '_')}.jpg"
@@ -114,6 +120,7 @@ async def api_create_actor(req):
         actor_doc = {
             "name": name,
             "bio": bio,
+            "tags": tags_list,
             "photo_url": f"TG_ID:{tg_photo_id}",
             "social_links": {"instagram": "", "youtube": "", "twitter": ""},
             "gallery": [],
@@ -130,7 +137,7 @@ async def api_create_actor(req):
 @actor_routes.get('/api/actor/photo')
 async def get_actor_photo(req):
     actor_id = req.query.get("id")
-    img_index = req.query.get("gallery_idx") # अगर गैलरी की इमेज लोड करनी हो
+    img_index = req.query.get("gallery_idx")
     if not actor_id: return web.Response(status=400)
     
     try:
@@ -173,17 +180,21 @@ async def actor_profile_display(req):
     except: return web.Response(text="Invalid ID", status=400)
         
     actor_name = actor["name"]
+    tags_list = actor.get("tags", [])
     social = actor.get("social_links", {"instagram": "", "youtube": "", "twitter": ""})
     gallery_list = actor.get("gallery", [])
     
-    # सोशल मीडिया आइकन्स UI रेंडरिंग कवच
+    tags_chips_html = '<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">'
+    for tag in tags_list:
+        tags_chips_html += f'<span style="background:var(--bg3); border:1px solid var(--border); color:var(--muted); font-size:11px; padding:3px 8px; border-radius:4px; font-weight:600;">#{tag}</span>'
+    tags_chips_html += '</div>'
+
     social_html = '<div style="display:flex; gap:12px; margin-top:12px; flex-wrap:wrap;">'
     if social.get("instagram"): social_html += f'<a href="{social["instagram"]}" target="_blank" style="background:#ff007f; color:#fff; padding:6px 14px; border-radius:6px; text-decoration:none; font-size:12px; font-weight:700;">📸 Instagram</a>'
     if social.get("youtube"): social_html += f'<a href="{social["youtube"]}" target="_blank" style="background:#ff0000; color:#fff; padding:6px 14px; border-radius:6px; text-decoration:none; font-size:12px; font-weight:700;">📺 YouTube</a>'
     if social.get("twitter"): social_html += f'<a href="{social["twitter"]}" target="_blank" style="background:#1da1f2; color:#fff; padding:6px 14px; border-radius:6px; text-decoration:none; font-size:12px; font-weight:700;">🐦 Twitter / X</a>'
     social_html += '</div>'
 
-    # गैलरी टैब ग्रिड रेंडरिंग इंजन
     gallery_grid_html = ""
     if role == 'admin':
         gallery_grid_html += f'''
@@ -205,8 +216,8 @@ async def actor_profile_display(req):
             gallery_grid_html += f'<img src="/api/actor/photo?id={actor_id}&gallery_idx={i}" class="gallery-item" loading="lazy">'
         gallery_grid_html += '</div>'
 
-    # ✏️ एडमिन प्रोफाइल एडिट बटन मोडाल लेआउट ट्रिगर
     admin_edit_btn = f'<button onclick="openActorEditModal()" style="background:var(--bg4); border:1px solid var(--border); color:var(--text); padding:8px 16px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; margin-top:10px; align-self:flex-start;">✏️ Edit Profile & Socials</button>' if role == 'admin' else ""
+    tags_json_payload = json.dumps(tags_list)
 
     tab_engine_ui = f'''
     <div class="main" style="padding-top:30px; max-width:1100px; margin: 0 auto; padding-left:20px; padding-right:20px;">
@@ -217,8 +228,8 @@ async def actor_profile_display(req):
                 <img src="/api/actor/photo?id={actor_id}" style="width:100%; height:100%; object-fit:cover;">
             </div>
             <div style="flex:1; min-width:300px; display:flex; flex-direction:column; justify-content:center;">
-                <h1 style="font-size:32px; font-weight:900; color:var(--text); margin-bottom:6px;">{actor_name}</h1>
-                <div style="font-size:12px; color:var(--accent); font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">🌟 Verified Star Profile</div>
+                <h1 style="font-size:32px; font-weight:900; color:var(--text); margin-bottom:2px;">{actor_name}</h1>
+                {tags_chips_html}
                 {social_html}
                 {admin_edit_btn}
             </div>
@@ -268,6 +279,8 @@ async def actor_profile_display(req):
         </div>
     </div>
 
+    <input type="hidden" id="actor_master_tags_payload" value='{tags_json_payload}'>
+
     <div class="edit-modal" id="actorEditModal" onclick="if(event.target===this)closeActorEditModal()">
         <div class="em-card" style="max-width:550px;">
             <button class="em-close" onclick="closeActorEditModal()">&#10005;</button>
@@ -281,6 +294,9 @@ async def actor_profile_display(req):
                 <div class="scard-label">Biography Details</div>
                 <textarea name="bio" class="em-input" style="min-height:120px; font-family:inherit; padding:10px; line-height:1.5;" required>{actor["bio"]}</textarea>
                 
+                <div class="scard-label">Search Tags (Comma Separated)</div>
+                <input type="text" name="tags" value="{', '.join(tags_list)}" placeholder="e.g. SRK, Shahrukh, King Khan" class="em-input">
+
                 <div class="em-title" style="font-size:14px; margin-top:15px; margin-bottom:10px;">🌐 Social Media Channels Matrix</div>
                 
                 <div class="scard-label">Instagram Link</div>
@@ -298,9 +314,8 @@ async def actor_profile_display(req):
     </div>
 
     <script>
-        var actName = "{actor_name}";
         var actCurPage = 1, actOffset = 0, actNextOffset = "";
-        var actLimit = 21; // 21 रिज़ल्ट्स स्ट्रिक्ट बाउंडेड
+        var actLimit = 21;
 
         function switchActorTab(evt, tabId) {{
             var panels = document.querySelectorAll('.actor-panel');
@@ -319,16 +334,17 @@ async def actor_profile_display(req):
         function resetActorSearchPage() {{ actCurPage = 1; actOffset = 0; }}
 
         async function triggerActorSearchAjax() {{
-            var q = document.getElementById('actor_movie_q').value.trim() || actName;
+            var q = document.getElementById('actor_movie_q').value.trim();
             var col = document.getElementById('actor_col_sel').value;
             var mode = document.getElementById('actor_mode_sel').value;
             var grid = document.getElementById('actor_video_results');
             
             grid.className = 'res-grid mode-' + mode;
-            grid.innerHTML = '<div class="spin-wrap"><div class="spinner"></div><span>Filtering Network Matrix...</span></div>';
+            grid.innerHTML = '<div class="spin-wrap"><div class="spinner"></div><span>Filtering Cross-Network Matrix...</span></div>';
             
             try {{
-                var r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&offset=' + actOffset + '&col=' + col + '&mode=' + mode);
+                var targetUrl = '/api/actor/search?q=' + encodeURIComponent(q) + '&offset=' + actOffset + '&col=' + col + '&mode=' + mode + '&id={actor_id}';
+                var r = await fetch(targetUrl);
                 var d = await r.json();
                 if(!d.results || !d.results.length) {{
                     grid.innerHTML = '<div class="empty"><p>No video assets matching filters found inside database.</p></div>';
@@ -377,6 +393,58 @@ async def actor_profile_display(req):
     return build_page(f"{actor_name} - Profile Matrix", tab_engine_ui, "", "actors", role)
 
 # ─────────────────────────────────────────────────────────
+# ⚙️ ADMIN API: DYNAMIC AJAX OR SEARCH PIPELINE FOR ACTOR PAGE
+# ─────────────────────────────────────────────────────────
+@actor_routes.get('/api/actor/search')
+async def api_actor_search_handler(req):
+    role, _ = await get_auth(req)
+    if not role: return web.json_response({"error": "Unauthorized"}, status=403)
+    
+    actor_id = req.query.get("id")
+    q_custom = req.query.get("q", "").strip()
+    off = req.query.get("offset", "0")
+    col = req.query.get("col", "all").lower()
+    mode = req.query.get("mode", "tg").lower()
+    
+    if not actor_id: return web.json_response({"results": []})
+    try: off = max(0, int(off))
+    except: off = 0
+        
+    actor = await actors.find_one({"_id": ObjectId(actor_id)})
+    if not actor: return web.json_response({"results": []})
+    
+    search_query = q_custom if q_custom else actor["name"]
+    tags_list = actor.get("tags", [])
+    
+    lim = 21
+    
+    all_m, next_offset = await get_actor_search_results(
+        search_query, tags_list, max_results=lim, offset=off, collection_type=col
+    )
+    
+    results_list = []
+    for d in all_m:
+        fid = d.get("file_ref") or d.get("_id")
+        db_id = d.get("_id")
+        source_col = d.get("source_col", "primary")
+        
+        raw_thumb = d.get("thumb_url", "")
+        v_salt = raw_thumb[-8:] if (raw_thumb and raw_thumb.startswith("TG_ID:")) else "0"
+        tg_thumb = f"/api/thumb?file_id={db_id}&col={source_col}&v={v_salt}"
+        
+        results_list.append({
+            "file_id": db_id,
+            "name": d.get("file_name", "Unknown File"),
+            "size": get_size(d.get("file_size", 0)),
+            "type": d.get("file_type", "document").upper(),
+            "source": source_col.capitalize(),
+            "tg_thumb": tg_thumb,
+            "watch": f"/setup_stream?file_id={fid}&mode=watch"
+        })
+        
+    return web.json_response({"results": results_list, "next_offset": next_offset})
+
+# ─────────────────────────────────────────────────────────
 # ⚙️ ADMIN API: UPDATE PROFILE DETAILS & SOCIAL MEDIA CHANNELS
 # ─────────────────────────────────────────────────────────
 @actor_routes.post('/api/actor/update_profile')
@@ -388,15 +456,19 @@ async def api_actor_update_profile(req):
     actor_id = d.get('actor_id')
     name = d.get('name', '').strip()
     bio = d.get('bio', '').strip()
+    tags_raw = d.get('tags', '').strip()
     insta = d.get('insta', '').strip()
     yt = d.get('yt', '').strip()
     twitter = d.get('twitter', '').strip()
     
     if not actor_id or not name or not bio: return web.HTTPFound('/actors?err=Missing assets data')
     
+    tags_list = [t.strip() for t in tags_raw.split(",") if t.strip()]
+    
     update_doc = {
         "name": name,
         "bio": bio,
+        "tags": tags_list,
         "social_links": {"instagram": insta, "youtube": yt, "twitter": twitter}
     }
     
@@ -429,7 +501,6 @@ async def api_actor_gallery_upload(req):
         if not msg or not msg.photo: return web.HTTPFound(f'/actor/{actor_id}?err=Telegram Node Gallery Upload Failed')
         tg_photo_id = msg.photo.sizes[-1].file_id if hasattr(msg.photo, "sizes") and msg.photo.sizes else msg.photo.file_id
         
-        # डॉक्यूमेंट के गैलरी एरे के अंदर $push कर दो
         await actors.update_one({"_id": ObjectId(actor_id)}, {"$push": {"gallery": f"TG_ID:{tg_photo_id}"}})
         return web.HTTPFound(f'/actor/{actor_id}?msg=New portrait uploaded successfully to star gallery!')
     except Exception as e:
