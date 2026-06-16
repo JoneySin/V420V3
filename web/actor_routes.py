@@ -222,6 +222,7 @@ async def actor_profile_display(req):
     tags_json_payload = html.escape(json.dumps(tags_list))
     safe_bio = html.escape(actor.get("bio", ""))
 
+    # ✅ FIXED LAYER: JavaScript functions wrapped in double curly braces {{ }} inside the f-string template
     tab_engine_ui = f'''
     <style>
         .actor-tab-bar {{ display: flex; gap: 10px; border-bottom: 2px solid var(--border); margin-bottom: 25px; }}
@@ -233,6 +234,11 @@ async def actor_profile_display(req):
         .gallery-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }}
         .gallery-item {{ width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); transition: transform 0.2s; }}
         .gallery-item:hover {{ transform: scale(1.03); }}
+        
+        /* Modal CSS Patch */
+        .edit-modal {{ position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 200; display: none; align-items: center; justify-content: center; overflow-y: auto; padding: 20px 10px; }}
+        .edit-modal.open {{ display: flex !important; }}
+        .em-card {{ background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 25px; width: 100%; max-width: 480px; box-shadow: 0 10px 30px rgba(0,0,0,.5); position: relative; margin: auto; }}
     </style>
 
     <div class="main" style="padding-top:30px; max-width:1100px; margin: 0 auto; padding-left:20px; padding-right:20px;">
@@ -297,7 +303,7 @@ async def actor_profile_display(req):
     <input type="hidden" id="actor_master_tags_payload" value="{tags_json_payload}">
 
     <div class="edit-modal" id="actorEditModal" onclick="if(event.target===this)closeActorEditModal()">
-        <div class="em-card" style="max-width:550px; background: var(--card); border:1px solid var(--border); padding:25px; border-radius:12px;">
+        <div class="em-card">
             <button class="em-close" onclick="closeActorEditModal()" style="position:absolute; top:15px; right:20px; background:none; border:none; color:var(--muted); font-size:24px; cursor:pointer;">&#10005;</button>
             <div class="em-title" style="font-size:18px; font-weight:700; margin-bottom:20px; color:var(--text);">✏️ Edit Actor Profile Matrix</div>
             <form action="/api/actor/update_profile" method="post">
@@ -369,17 +375,15 @@ async def actor_profile_display(req):
                 }}
                 var h = '';
                 d.results.forEach(function(f) {{
-                    // ✅ FIX: source_col को हमेशा lowercase करो (DB "Primary" → "primary")
                     var sc = (f.source || 'primary').toLowerCase();
                     if(!['primary','cloud','archive'].includes(sc)) sc = 'primary';
                     var posterHtml = '';
                     if(mode !== 'none') {{
-                        // ✅ FIX: onload से 'loaded' क्लास add होगी — smooth fade-in thumbnail
-                        posterHtml = '<div class="poster-box"><img src="'+f.tg_thumb+'" class="fc-poster" onload="this.classList.add(\'loaded\')" loading="lazy"><div class="poster-top"><span class="type-chip">'+f.type.toUpperCase()+'</span><span class="size-chip">'+f.size+'</span><span class="source-pill '+sc+'"><span class="source-dot"></span>'+sc.toUpperCase()+'</span></div></div>';
+                        posterHtml = '<div class="poster-box"><img src="'+f.tg_thumb+'" class="fc-poster" onload="this.classList.add(\\'loaded\\')" loading="lazy"><div class="poster-top"><span class="type-chip">'+f.type.toUpperCase()+'</span><span class="size-chip">'+f.size+'</span><span class="source-pill '+sc+'"><span class="source-dot"></span>'+sc.toUpperCase()+'</span></div></div>';
                     }} else {{
                         posterHtml = '<div class="fc-text-info"><span class="tc-type">'+f.type.toUpperCase()+'</span><span class="tc-size">'+f.size+'</span><span class="source-pill '+sc+'" style="margin-left:auto"><span class="source-dot"></span>'+sc.toUpperCase()+'</span></div>';
                     }}
-                    h += '<div class="file-card">' + posterHtml + '<div class="fc-body"><div class="fc-name" onclick="window.open(\\''+f.watch+'\\',\\'_blank\\')">'+f.name+'</div></div></div>';
+                    h += '<div class="file-card">' + posterHtml + '<div class="fc-body"><div class="fc-name" onclick="window.open(\\'\\'+f.watch+\\'\\',\\'_blank\\')">'+f.name+'</div></div></div>';
                 }});
                 grid.innerHTML = h;
                 actNextOffset = d.next_offset;
@@ -421,7 +425,6 @@ async def api_actor_search_handler(req):
     actor = await actors.find_one({"_id": ObjectId(actor_id)})
     if not actor: return web.json_response({"results": []})
     
-    # ✅ FIX 1: Custom query हो तो उसे use करो वरना actor name + tags सब मिलाकर search करो
     tags_list = actor.get("tags", [])
     search_query = q_custom if q_custom else actor["name"]
     
@@ -446,7 +449,6 @@ async def api_actor_search_handler(req):
             "name": d.get("file_name", "Unknown File"),
             "size": get_size(d.get("file_size", 0)),
             "type": d.get("file_type", "document").upper(),
-            # ✅ FIX: source को lowercase भेजो ताकि CSS class (primary/cloud/archive) match हो
             "source": source_col.lower(),
             "tg_thumb": tg_thumb,
             "watch": f"/setup_stream?file_id={fid}&mode=watch"
@@ -493,7 +495,7 @@ async def api_actor_gallery_upload(req):
     role, _ = await get_auth(req)
     if role != 'admin': return web.json_response({"error": "Unauthorized"}, status=403)
     
-    actor_id = None  # ✅ FIX: पहले actor_id को None init करो ताकि except में भी use हो सके
+    actor_id = None
     try:
         reader = await req.multipart()
         image_bytes = None
@@ -517,6 +519,5 @@ async def api_actor_gallery_upload(req):
         await actors.update_one({"_id": ObjectId(actor_id)}, {"$push": {"gallery": f"TG_ID:{tg_photo_id}"}})
         return web.HTTPFound(f'/actor/{actor_id}?msg=New portrait uploaded successfully to star gallery!')
     except Exception as e:
-        # ✅ FIX: crash पर actor page पर वापस जाओ, /actors catalog पर नहीं
         redirect_url = f'/actor/{actor_id}?err=Upload crash: {str(e)}' if actor_id else f'/actors?err=System core crash: {str(e)}'
         return web.HTTPFound(redirect_url)
