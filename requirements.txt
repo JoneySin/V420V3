@@ -1,0 +1,17 @@
+hydrogram
+tgcrypto
+motor
+dnspython
+aiohttp
+aiofiles
+uvloop
+requests
+qrcode
+Pillow
+pytz
+pyromod
+pymongo
+google-genai
+google-generativeai
+multidict
+yarl
