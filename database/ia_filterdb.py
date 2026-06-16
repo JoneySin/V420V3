@@ -401,7 +401,8 @@ async def get_actor_search_results(actor_name, tags_list, max_results, offset=0,
         if docs:
             for doc in docs:
                 doc["file_id"] = doc["_id"]
-                doc["source_col"] = col.name.lower() # थंबनेल इंजन सिंकिंग को आसान बनाने के लिए सोर्स ट्रैक रखें
+                # ✅ FIX: DB collection name "Primary" → lowercase "primary" for CSS class sync
+                doc["source_col"] = col.name.lower()
             results.extend(docs)
             if len(results) >= max_results:
                 results = results[:max_results]
