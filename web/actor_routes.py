@@ -38,11 +38,12 @@ async def actors_directory_page(req):
         actors_grid_html = '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:20px;">'
         for act in all_actors:
             act_id = str(act["_id"])
-            # ✅ FIX: टाइमस्टैम्प हटा दिया गया है ताकि पूरी लिस्ट बार-बार लोड होकर सर्वर/डेटा पर लोड न डाले
+            # ✅ FIX: photo_updated_at से stable version tag — सिर्फ तब बदलेगा जब फोटो बदले
+            photo_v = int(act.get("photo_updated_at") or act.get("created_at") or 0)
             actors_grid_html += f'''
             <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; overflow:hidden; transition:0.2s; cursor:pointer;" onclick="window.location.href='/actor/{act_id}'">
                 <div style="position:relative; padding-top:135%; background:var(--bg3); overflow:hidden;">
-                    <img src="/api/actor/photo?id={act_id}" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;" loading="lazy">
+                    <img src="/api/actor/photo?id={act_id}&v={photo_v}" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;" loading="lazy">
                 </div>
                 <div style="padding:12px; text-align:center;">
                     <div style="font-size:14px; font-weight:700; color:var(--text); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">{html.escape(act.get('name', ''))}</div>
@@ -119,14 +120,16 @@ async def api_create_actor(req):
         if not msg or not msg.photo: return web.HTTPFound('/admin/create_actor?err=Telegram Upload Failed!')
         tg_photo_id = msg.photo.sizes[-1].file_id if hasattr(msg.photo, "sizes") and msg.photo.sizes else msg.photo.file_id
         
+        now_ts = int(time.time())
         actor_doc = {
             "name": name,
             "bio": bio,
             "tags": tags_list,
             "photo_url": f"TG_ID:{tg_photo_id}",
+            "photo_updated_at": now_ts,
             "social_links": {"instagram": "", "youtube": "", "twitter": ""},
             "gallery": [],
-            "created_at": time.time()
+            "created_at": now_ts
         }
         await actors.insert_one(actor_doc)
         return web.HTTPFound('/actors?msg=Actor Profile created successfully!')
@@ -152,10 +155,10 @@ async def get_actor_photo(req):
             headers = {"Cache-Control": "public, max-age=31536000, immutable", "Content-Disposition": 'inline; filename="photo.jpg"'}
         else:
             raw_url = doc.get("photo_url")
+            # ✅ FIX: ?v= version tag की वजह से अब safely cache किया जा सकता है
+            # जब फोटो बदलेगी → v बदलेगा → browser नई फोटो लेगा
             headers = {
-                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                "Pragma": "no-cache",
-                "Expires": "0",
+                "Cache-Control": "public, max-age=31536000, immutable",
                 "Content-Disposition": 'inline; filename="avatar.jpg"'
             }
             
@@ -245,7 +248,8 @@ async def actor_profile_display(req):
         
     tags_json_payload = html.escape(json.dumps(tags_list))
     safe_bio = html.escape(actor.get("bio", ""))
-    master_ts = int(time.time())
+    # ✅ FIX: stable photo version — सिर्फ तब बदलेगा जब फोटो upload हो
+    photo_v = int(actor.get("photo_updated_at") or actor.get("created_at") or 0)
 
     tab_engine_ui = f'''
     <style>
@@ -347,7 +351,7 @@ async def actor_profile_display(req):
         
         <div class="actor-header-wrap">
             <div class="avatar-box-master">
-                <img id="actorMasterAvatarImage" src="/api/actor/photo?id={actor_id}&t={master_ts}" style="width:100%; height:100%; object-fit:cover;">
+                <img id="actorMasterAvatarImage" src="/api/actor/photo?id={actor_id}&v={photo_v}" style="width:100%; height:100%; object-fit:cover;">
             </div>
             <div style="flex:1; min-width:300px; display:flex; flex-direction:column; justify-content:center; width: 100%;">
                 <h1 style="font-size:32px; font-weight:900; color:var(--text); margin-bottom:2px;">{html.escape(actor_name)}</h1>
@@ -603,8 +607,8 @@ async def actor_profile_display(req):
                 var r = await fetch('/api/actor/update_avatar', {{ method: 'POST', body: formData }});
                 var d = await r.json();
                 if(d.success) {{
-                    var timestamp = new Date().getTime();
-                    document.getElementById('actorMasterAvatarImage').src = '/api/actor/photo?id=' + actorId + '&t=' + timestamp;
+                    var newV = d.photo_updated_at || new Date().getTime();
+                    document.getElementById('actorMasterAvatarImage').src = '/api/actor/photo?id=' + actorId + '&v=' + newV;
                     alert("Profile photo updated successfully!");
                 }} else {{
                     alert(d.error || "Upload failed!");
@@ -768,8 +772,8 @@ async def api_actor_update_avatar(req):
             
         tg_photo_id = msg.photo.sizes[-1].file_id if hasattr(msg.photo, "sizes") and msg.photo.sizes else msg.photo.file_id
         
-        await actors.update_one({"_id": ObjectId(actor_id)}, {"$set": {"photo_url": f"TG_ID:{tg_photo_id}"}})
-        return web.json_response({"success": True})
+        await actors.update_one({"_id": ObjectId(actor_id)}, {"$set": {"photo_url": f"TG_ID:{tg_photo_id}", "photo_updated_at": int(time.time())}})
+        return web.json_response({"success": True, "photo_updated_at": int(time.time())})
     except Exception as e:
         return web.json_response({"success": False, "error": str(e)})
 
