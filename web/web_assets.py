@@ -18,21 +18,23 @@ CSS = """
 .btn-del{background:rgba(160,8,8,.78);backdrop-filter:blur(10px);color:#fff;border:1px solid rgba(229,9,20,.45)}
 .btn-del:hover{background:rgba(229,9,20,.92)}
 
-/* ── MASTER UNIVERSAL ASSET CARD & GRID (DRY OPTIMIZED) ── */
+/* ── MASTER UNIVERSAL ASSET CARD & GRID (DRY OPTIMIZED & NEW ANIMATIONS) ── */
 .res-grid{display:grid;grid-template-columns:1fr;gap:4px;margin-bottom:24px}
 @media(min-width:600px){.res-grid{grid-template-columns:repeat(3,1fr);gap:14px}}
 .res-grid.mode-none .poster-box{display:none}
 
-.file-card{background:var(--card);border-radius:8px;overflow:hidden;border:1px solid var(--border);display:flex;flex-direction:column;transition:transform .22s cubic-bezier(.4,0,.2,1),box-shadow .22s,border-color .22s;cursor:pointer}
-.file-card:hover{transform:translateY(-5px);border-color:rgba(229,9,20,.45);box-shadow:0 14px 36px rgba(0,0,0,.6),0 0 0 1px rgba(229,9,20,.22)}
-.file-card:active{transform:scale(0.96);transition:transform 0.1s}
+/* ✅ NEW PREMIUM 3D HOVER EFFECT */
+.file-card{background:var(--card);border-radius:10px;overflow:hidden;border:1px solid var(--border);display:flex;flex-direction:column;transition:all .3s cubic-bezier(.25,.8,.25,1);cursor:pointer;position:relative}
+.file-card:hover{transform:translateY(-6px) scale(1.02);border-color:var(--accent);box-shadow:0 15px 35px rgba(0,0,0,.6),0 0 15px rgba(229,9,20,.3);z-index:2}
+.file-card:active{transform:scale(.96);transition:transform .1s}
 
 .poster-box{position:relative;padding-top:56.25%;background:linear-gradient(90deg, var(--bg3) 0px, var(--bg4) 50%, var(--bg3) 100%);background-size:200% 100%;animation:shimmer 1.5s infinite linear;overflow:hidden;width:100%}
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
-.fc-poster{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 0.25s ease-in-out, transform 0.35s ease}
+/* ✅ ENHANCED POSTER ZOOM REVEAL */
+.fc-poster{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .3s ease,transform .5s cubic-bezier(.25,1,.5,1)}
 .fc-poster.loaded{opacity:1}
-.file-card:hover .fc-poster{transform:scale(1.06)}
+.file-card:hover .fc-poster{transform:scale(1.08)}
 
 .thumb-error{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#1f1f1f;z-index:2}
 .poster-top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:5px;padding:8px;z-index:3}
@@ -194,6 +196,7 @@ function handleLocalPreview(input){
     }
 }
 
+/* ✅ FINAL FIX: In-place Title & Thumbnail Update without breaking Layout */
 async function saveAllChanges(){
     var newName=document.getElementById('emName').value.trim();
     var addCaption=document.getElementById('emAddCaption') ? document.getElementById('emAddCaption').value.trim() : '';
@@ -203,6 +206,8 @@ async function saveAllChanges(){
     var btn=document.getElementById('emSaveBtn');
     btn.disabled=true; btn.innerText='Processing...';
     try{
+        var thumbUpdated = false;
+        
         if(cropperInstance){
             showToast('✂️ Cropping & Uploading...');
             var canvas=cropperInstance.getCroppedCanvas({width:1280,height:720,imageSmoothingEnabled:true,imageSmoothingQuality:'high'});
@@ -212,6 +217,7 @@ async function saveAllChanges(){
                 var upRes=await fetch('/api/upload_thumb',{method:'POST',body:fd});
                 var upData=await upRes.json();
                 if(!upData.success){showToast('Upload failed!','error'); btn.disabled=false; btn.innerText='Save Changes'; return;}
+                thumbUpdated = true;
             }
         }
         var payload = { file_id: activeFid, collection: activeCol, new_name: newName, add_caption: addCaption, target_collection: moveCol };
@@ -221,7 +227,20 @@ async function saveAllChanges(){
         if(res.success||cropperInstance){
             showToast('✨ File updated successfully!');
             closeCombinedModal();
-            refreshGridAfterEdit();
+            
+            // अगर कलेक्शन बदला गया है, तभी पेज को रीफ्रेश करें ताकि फाइल अपनी नई केटेगरी में जा सके
+            if (activeCol !== moveCol) {
+                refreshGridAfterEdit();
+                return;
+            }
+            
+            // बिना रीफ्रेश किए नाम अपडेट करें
+            var nameElement = document.getElementById('name-title-' + activeFid);
+            if (nameElement) nameElement.innerText = newName;
+            
+            // बिना रीफ्रेश किए थंबनेल अपडेट करें
+            if (thumbUpdated) reloadThumb(activeFid);
+            
         } else showToast(res.error||'Update failed!','error');
     }catch(e){showToast('Network Error','error');}
     finally{btn.disabled=false; btn.innerText='Save Changes';}
