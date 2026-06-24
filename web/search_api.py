@@ -503,7 +503,9 @@ async def api_upload_thumb(req):
             {"_id": file_id_field},
             {"$set": {"thumb_url": db_save_value, "thumb_source": "web", "is_thumb_permanent": True}}
         )
-        await db.add_to_delete_queue(THUMBNAIL_STORAGE_CHANNEL, msg.id, 5)
+        
+        # ❌ (Removed auto-delete so permanent thumbnails stay in channel)
+        # await db.add_to_delete_queue(THUMBNAIL_STORAGE_CHANNEL, msg.id, 5)
         
         PREFETCH_CACHE.clear()
         TRENDING_CACHE.clear()
