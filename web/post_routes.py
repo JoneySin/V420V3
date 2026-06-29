@@ -92,11 +92,19 @@ async def create_post_page(req):
                     <label class="s-label">Post Title</label>
                     <input type="text" name="title" placeholder="e.g. Panchayat S03" class="s-input" required>
                     
+                    <label class="s-label">Category</label>
+                    <select name="category" class="s-input" style="cursor:pointer;" required>
+                        <option value="Movies">🎬 Movies</option>
+                        <option value="Web Series">📺 Web Series</option>
+                        <option value="App Video">📱 App Video</option>
+                        <option value="Porn">🔞 Porn</option>
+                    </select>
+
                     <label class="s-label">Short Description</label>
                     <textarea name="description" placeholder="Write something about this post..." class="s-input" style="min-height:100px; resize:vertical;" required></textarea>
                     
                     <label class="s-label">Search Tags (Comma Separated)</label>
-                    <input type="text" name="tags" placeholder="e.g. Action, Web Series" class="s-input" style="margin-bottom:0;">
+                    <input type="text" name="tags" placeholder="e.g. Action, Thriller" class="s-input" style="margin-bottom:0;">
                 </div>
             </div>
 
@@ -193,6 +201,13 @@ async def edit_post_page(req):
     tags = html.escape(", ".join(post.get('tags', [])))
     cover_url = post.get('cover_image', '')
     ss_urls = "\n".join(post.get('screenshots', []))
+    
+    # 📌 Fetch saved category and build dropdown
+    saved_cat = post.get('category', 'Movies')
+    cat_opts = ""
+    for cat in ['Movies', 'Web Series', 'App Video', 'Porn']:
+        sel = 'selected' if cat == saved_cat else ''
+        cat_opts += f'<option value="{cat}" {sel}>{"🎬" if cat=="Movies" else "📺" if cat=="Web Series" else "📱" if cat=="App Video" else "🔞"} {cat}</option>'
 
     video_html = ""
     for v in post.get('videos', []):
@@ -248,6 +263,11 @@ async def edit_post_page(req):
                     <label class="s-label">Post Title</label>
                     <input type="text" name="title" value="{title}" class="s-input" required>
                     
+                    <label class="s-label">Category</label>
+                    <select name="category" class="s-input" style="cursor:pointer;" required>
+                        {cat_opts}
+                    </select>
+
                     <label class="s-label">Short Description</label>
                     <textarea name="description" class="s-input" style="min-height:100px; resize:vertical;" required>{desc}</textarea>
                     
@@ -337,7 +357,7 @@ async def edit_post_page(req):
 # ─────────────────────────────────────────────────────────
 async def process_multipart_post(req, action="publish"):
     reader = await req.multipart()
-    post_data = {"title": "", "description": "", "cover_image": "", "screenshots": [], "videos": [], "tags": []}
+    post_data = {"title": "", "description": "", "cover_image": "", "category": "Movies", "screenshots": [], "videos": [], "tags": []}
     if action == "publish": post_data["created_at"] = int(time.time())
     
     screenshot_urls_raw = ""
@@ -352,6 +372,7 @@ async def process_multipart_post(req, action="publish"):
         if p_name == 'post_id': post_id = (await part.read()).decode().strip()
         elif p_name == 'title': post_data["title"] = (await part.read()).decode().strip()
         elif p_name == 'description': post_data["description"] = (await part.read()).decode().strip()
+        elif p_name == 'category': post_data["category"] = (await part.read()).decode().strip()
         elif p_name == 'tags': post_data["tags"] = [t.strip() for t in (await part.read()).decode().strip().split(",") if t.strip()]
         
         elif p_name == 'video_id': temp_v_ids.append((await part.read()).decode().strip())
@@ -457,7 +478,7 @@ async def get_post_photo(req):
     finally: gc.collect()
 
 # ─────────────────────────────────────────────────────────
-# 🌐 5. PUBLIC ROUTE: POSTS DIRECTORY GRID
+# 🌐 5. PUBLIC ROUTE: POSTS DIRECTORY GRID (UPDATE SEARCH UI)
 # ─────────────────────────────────────────────────────────
 @post_routes.get('/posts')
 async def posts_directory_page(req):
@@ -468,19 +489,89 @@ async def posts_directory_page(req):
     has_next_init = len(all_posts) > 20
     all_posts = all_posts[:20]
     
-    admin_btn = '''<button onclick="window.location.href='/admin/create_post'" style="background:var(--accent); color:#fff; border:none; padding:0 24px; border-radius:8px; font-weight:800; cursor:pointer; white-space:nowrap;">➕ Create</button>''' if role == 'admin' else ""
+    admin_btn = '''<button onclick="window.location.href='/admin/create_post'" class="s-btn-primary" style="padding:12px 24px; border-radius:8px; font-weight:800; cursor:pointer; white-space:nowrap;">➕ Create</button>''' if role == 'admin' else ""
     
-    search_ui = f'''<style>.dir-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }} @media(min-width: 768px) {{ .dir-grid {{ grid-template-columns: repeat(5, 1fr); gap: 20px; }} }} .search-box {{ background:var(--card); border:1px solid var(--border); padding:16px; border-radius:12px; margin-bottom:25px; box-shadow:0 4px 15px rgba(0,0,0,0.1); display:flex; gap:10px; }} .s-input {{ flex:1; background:var(--bg3); border:1px solid var(--border); padding:12px 16px; color:var(--text); border-radius:8px; outline:none; font-weight:600; font-size:14px; font-family:inherit; }} .pg-bar {{ display:flex; justify-content:center; align-items:center; gap:15px; margin-top:30px; }}</style><div class="search-box"><input type="text" id="post_q" class="s-input" placeholder="Search movies, series, posts..."><button onclick="resetPost(); searchPosts()" style="background:var(--bg4); color:var(--text); border:1px solid var(--border); padding:0 24px; border-radius:8px; font-weight:800; cursor:pointer;">Search</button>{admin_btn}</div>'''
+    search_ui = f'''
+    <style>
+        .dir-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }} 
+        @media(min-width: 768px) {{ 
+            .dir-grid {{ grid-template-columns: repeat(5, 1fr); gap: 20px; }} 
+        }} 
+        .search-box {{ background:var(--card); border:1px solid var(--border); padding:16px; border-radius:12px; margin-bottom:25px; box-shadow:0 4px 15px rgba(0,0,0,0.1); display:flex; flex-direction:column; gap:12px; }} 
+        .s-row {{ display:flex; gap:10px; width:100%; }}
+        .s-input {{ flex:1; background:var(--bg3); border:1px solid var(--border); padding:12px 16px; color:var(--text); border-radius:8px; outline:none; font-weight:600; font-size:14px; font-family:inherit; min-width:0; }} 
+        .s-btn {{ background:var(--bg4); color:var(--text); border:1px solid var(--border); padding:12px 24px; border-radius:8px; font-weight:800; cursor:pointer; white-space:nowrap; }}
+        .s-btn-primary {{ background:var(--accent); color:#fff; border:1px solid var(--accent); }}
+        .pg-bar {{ display:flex; justify-content:center; align-items:center; gap:15px; margin-top:30px; }}
+        
+        /* 📄 Text View CSS overrides */
+        .grid-text-mode .poster-wrap {{ display: none !important; }}
+        .grid-text-mode .act-card {{ display:flex; align-items:center; padding:5px; }}
+        .grid-text-mode .card-body {{ text-align:left !important; padding:10px 15px !important; flex:1; }}
+    </style>
+    
+    <div class="search-box">
+        <div class="s-row">
+            <input type="text" id="post_q" class="s-input" placeholder="Search movies, series, posts..." onkeydown="if(event.key==='Enter'){{ resetPost(); searchPosts(); }}">
+            <button class="s-btn" onclick="resetPost(); searchPosts()">Search</button>
+            {admin_btn}
+        </div>
+        <div class="s-row">
+            <select id="view_mode" class="s-input" style="cursor:pointer;" onchange="toggleViewMode(this.value)">
+                <option value="poster">🖼️ Poster View</option>
+                <option value="text">📄 Text View</option>
+            </select>
+            <select id="post_category" class="s-input" style="cursor:pointer;" onchange="resetPost(); searchPosts()">
+                <option value="All">📁 All Categories</option>
+                <option value="Movies">🎬 Movies</option>
+                <option value="Web Series">📺 Web Series</option>
+                <option value="App Video">📱 App Video</option>
+                <option value="Porn">🔞 Porn</option>
+            </select>
+        </div>
+    </div>
+    '''
 
     post_items = ""
     for p in all_posts:
         cover = p.get("cover_image", "")
         img_src = f"/api/post/photo?id={cover.replace('TG_ID:', '')}" if cover.startswith("TG_ID:") else cover
-        post_items += f'''<div class="act-card card-enter" onclick="window.location.href='/post/{str(p["_id"])}'"><div style="position:relative; padding-top:135%; background:var(--bg3); overflow:hidden;"><img src="{img_src}" class="act-poster" loading="lazy"><div style="position:absolute; top:8px; left:8px; background:rgba(229,9,20,0.9); color:#fff; font-size:9px; padding:4px 8px; border-radius:4px; font-weight:800; backdrop-filter:blur(4px); z-index:2;">🎬 POST</div></div><div style="padding:12px; text-align:center;"><div style="font-size:13.5px; font-weight:800; color:var(--text); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">{html.escape(p.get("title", "Untitled"))}</div></div></div>'''
+        cat_badge = f'<div style="font-size:11px; color:var(--muted); font-weight:700; margin-top:4px;">{html.escape(p.get("category", "Uncategorized"))}</div>'
+        
+        post_items += f'''<div class="act-card card-enter" onclick="window.location.href='/post/{str(p["_id"])}'"><div class="poster-wrap" style="position:relative; padding-top:135%; background:var(--bg3); overflow:hidden;"><img src="{img_src}" class="act-poster" loading="lazy"><div style="position:absolute; top:8px; left:8px; background:rgba(229,9,20,0.9); color:#fff; font-size:9px; padding:4px 8px; border-radius:4px; font-weight:800; backdrop-filter:blur(4px); z-index:2;">🎬 POST</div></div><div class="card-body" style="padding:12px; text-align:center;"><div style="font-size:13.5px; font-weight:800; color:var(--text); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">{html.escape(p.get("title", "Untitled"))}</div>{cat_badge}</div></div>'''
     
     initial_grid = f'<div id="post_grid_container" class="dir-grid">{post_items}</div>' if all_posts else '<div style="text-align:center; padding:60px 20px; color:var(--muted);">No posts found.</div>'
 
-    js_logic = f'''<div class="pg-bar" id="post_pg_box" style="display:{'flex' if has_next_init else 'none'};"><button class="pg-btn" id="post_pBtn" onclick="prevPost()" disabled>Previous</button><span class="pg-info" id="post_pgInfo" style="font-weight:800;">Page 1</span><button class="pg-btn" id="post_nBtn" onclick="nextPost()">Next</button></div><script>var pOff = 0, pLim = 20, pPage = 1, pNext = {str(has_next_init).lower()}; async function searchPosts() {{ var q = document.getElementById('post_q').value.trim(); var grid = document.getElementById('post_grid_container'); grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--muted); font-weight:bold;">🔄 Searching Catalog...</div>'; try {{ var res = await fetch(`/api/posts/search?q=${{encodeURIComponent(q)}}&offset=${{pOff}}`); var data = await res.json(); grid.innerHTML = data.html; staggerCards(grid); pNext = data.has_next; updatePgUI(); }} catch(e) {{ grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--accent);">Error loading posts!</div>'; }} }} function updatePgUI() {{ var box = document.getElementById('post_pg_box'); box.style.display = (pOff === 0 && !pNext) ? 'none' : 'flex'; document.getElementById('post_pBtn').disabled = (pOff === 0); document.getElementById('post_nBtn').disabled = !pNext; document.getElementById('post_pgInfo').innerText = 'Page ' + pPage; }} function resetPost() {{ pOff = 0; pPage = 1; }} function nextPost() {{ if(pNext) {{ pOff += pLim; pPage++; searchPosts(); window.scrollTo(0, 50); }} }} function prevPost() {{ if(pOff > 0) {{ pOff = Math.max(0, pOff - pLim); pPage--; searchPosts(); window.scrollTo(0, 50); }} }} document.getElementById('post_q').addEventListener('keydown', e => {{ if(e.key === 'Enter') {{ resetPost(); searchPosts(); }} }}); document.addEventListener("DOMContentLoaded", () => {{ var grid = document.getElementById('post_grid_container'); if(grid && typeof staggerCards === 'function') staggerCards(grid); }}); </script>'''
+    js_logic = f'''<div class="pg-bar" id="post_pg_box" style="display:{'flex' if has_next_init else 'none'};"><button class="pg-btn" id="post_pBtn" onclick="prevPost()" disabled>Previous</button><span class="pg-info" id="post_pgInfo" style="font-weight:800;">Page 1</span><button class="pg-btn" id="post_nBtn" onclick="nextPost()">Next</button></div>
+    <script>
+        var pOff = 0, pLim = 20, pPage = 1, pNext = {str(has_next_init).lower()}; 
+        
+        function toggleViewMode(val) {{
+            const grid = document.getElementById('post_grid_container');
+            if(val === 'text') grid.classList.add('grid-text-mode');
+            else grid.classList.remove('grid-text-mode');
+        }}
+
+        async function searchPosts() {{ 
+            var q = document.getElementById('post_q').value.trim(); 
+            var cat = document.getElementById('post_category').value;
+            var grid = document.getElementById('post_grid_container'); 
+            grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--muted); font-weight:bold;">🔄 Searching Catalog...</div>'; 
+            try {{ 
+                var res = await fetch(`/api/posts/search?q=${{encodeURIComponent(q)}}&offset=${{pOff}}&category=${{encodeURIComponent(cat)}}`); 
+                var data = await res.json(); 
+                grid.innerHTML = data.html; 
+                staggerCards(grid); 
+                pNext = data.has_next; 
+                updatePgUI(); 
+            }} catch(e) {{ grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--accent);">Error loading posts!</div>'; }} 
+        }} 
+        function updatePgUI() {{ var box = document.getElementById('post_pg_box'); box.style.display = (pOff === 0 && !pNext) ? 'none' : 'flex'; document.getElementById('post_pBtn').disabled = (pOff === 0); document.getElementById('post_nBtn').disabled = !pNext; document.getElementById('post_pgInfo').innerText = 'Page ' + pPage; }} 
+        function resetPost() {{ pOff = 0; pPage = 1; }} 
+        function nextPost() {{ if(pNext) {{ pOff += pLim; pPage++; searchPosts(); window.scrollTo(0, 50); }} }} 
+        function prevPost() {{ if(pOff > 0) {{ pOff = Math.max(0, pOff - pLim); pPage--; searchPosts(); window.scrollTo(0, 50); }} }} 
+        document.addEventListener("DOMContentLoaded", () => {{ var grid = document.getElementById('post_grid_container'); if(grid && typeof staggerCards === 'function') staggerCards(grid); }}); 
+    </script>'''
 
     return build_page("Posts Catalog", f'<div class="main" style="padding-top:20px; max-width:1100px; margin:0 auto; padding-left:20px; padding-right:20px;">{search_ui}{initial_grid}{js_logic}</div>', "", "posts", role)
 
@@ -489,13 +580,19 @@ async def api_posts_search(req):
     role, _ = await get_auth(req)
     if not role: return web.json_response({"html": ""}, dumps=fast_json)
     q = req.query.get("q", "").strip()
+    category = req.query.get("category", "All").strip()
+    
     try: offset = int(req.query.get("offset", 0))
     except: offset = 0
     lim = 20
+    
     query = {}
     if q: 
         safe_q = re.escape(q)
         query["$or"] = [{"title": {"$regex": safe_q, "$options": "i"}}, {"tags": {"$regex": safe_q, "$options": "i"}}]
+    
+    if category and category != "All":
+        query["category"] = category
         
     docs = await posts_col.find(query).sort("created_at", -1).skip(offset).limit(lim + 1).to_list(length=lim + 1)
     has_next = len(docs) > lim
@@ -507,12 +604,14 @@ async def api_posts_search(req):
     for p in docs:
         cover = p.get("cover_image", "")
         img_src = f"/api/post/photo?id={cover.replace('TG_ID:', '')}" if cover.startswith("TG_ID:") else cover
-        html_out += f'''<div class="act-card card-enter" onclick="window.location.href='/post/{str(p["_id"])}'"><div style="position:relative; padding-top:135%; background:var(--bg3); overflow:hidden;"><img src="{img_src}" class="act-poster" loading="lazy"><div style="position:absolute; top:8px; left:8px; background:rgba(229,9,20,0.9); color:#fff; font-size:9px; padding:4px 8px; border-radius:4px; font-weight:800; backdrop-filter:blur(4px); z-index:2;">🎬 POST</div></div><div style="padding:12px; text-align:center;"><div style="font-size:13.5px; font-weight:800; color:var(--text); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">{html.escape(p.get("title", "Untitled"))}</div></div></div>'''
+        cat_badge = f'<div style="font-size:11px; color:var(--muted); font-weight:700; margin-top:4px;">{html.escape(p.get("category", "Uncategorized"))}</div>'
+        
+        html_out += f'''<div class="act-card card-enter" onclick="window.location.href='/post/{str(p["_id"])}'"><div class="poster-wrap" style="position:relative; padding-top:135%; background:var(--bg3); overflow:hidden;"><img src="{img_src}" class="act-poster" loading="lazy"><div style="position:absolute; top:8px; left:8px; background:rgba(229,9,20,0.9); color:#fff; font-size:9px; padding:4px 8px; border-radius:4px; font-weight:800; backdrop-filter:blur(4px); z-index:2;">🎬 POST</div></div><div class="card-body" style="padding:12px; text-align:center;"><div style="font-size:13.5px; font-weight:800; color:var(--text); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">{html.escape(p.get("title", "Untitled"))}</div>{cat_badge}</div></div>'''
             
     return web.json_response({"html": html_out, "has_next": has_next}, dumps=fast_json)
 
 # ─────────────────────────────────────────────────────────
-# 🍿 6. PUBLIC ROUTE: SINGLE POST VIEW (Screenshot Style Layout)
+# 🍿 6. PUBLIC ROUTE: SINGLE POST VIEW
 # ─────────────────────────────────────────────────────────
 @post_routes.get('/post/{id}')
 async def single_post_display(req):
@@ -527,9 +626,12 @@ async def single_post_display(req):
     cover = post.get("cover_image", "")
     img_src = f"/api/post/photo?id={cover.replace('TG_ID:', '')}" if cover.startswith("TG_ID:") else cover
     
-    # 📌 Tags Style Updated to match screenshot (dark inner box)
+    # 📌 Show Category along with tags
+    cat = post.get("category", "")
+    cat_html = f'<span style="background:var(--accent); border:1px solid var(--accent); color:#fff; font-size:12px; padding:5px 12px; border-radius:6px; font-weight:800; letter-spacing:0.5px;">📁 {html.escape(cat)}</span>' if cat else ""
+    
     tags_html = "".join([f'<span style="background:var(--bg4); border:1px solid var(--border); color:var(--text); font-size:12px; padding:5px 12px; border-radius:6px; font-weight:700;">#{html.escape(t)}</span>' for t in post.get("tags", [])])
-    tags_div = f'<div style="display:flex; flex-wrap:wrap; gap:10px; background:var(--bg); padding:15px; border-radius:8px; margin-top:15px; margin-bottom:15px;">{tags_html}</div>' if tags_html else ""
+    tags_div = f'<div style="display:flex; flex-wrap:wrap; gap:10px; background:var(--bg); padding:15px; border-radius:8px; margin-top:15px; margin-bottom:15px;">{cat_html}{tags_html}</div>' if (tags_html or cat_html) else ""
     
     # 🍿 Premium Netflix Style Episodes Layout
     video_buttons = ""
