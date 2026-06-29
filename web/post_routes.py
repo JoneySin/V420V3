@@ -7,7 +7,7 @@ from bson.objectid import ObjectId
 from utils import temp
 from info import THUMBNAIL_STORAGE_CHANNEL
 from database.users_chats_db import db as motor_db
-from web.web_assets import build_page, get_auth, form_wrapper
+from web.web_assets import build_page, get_auth
 
 post_routes = web.RouteTableDef()
 posts_col = motor_db.db["Posts"]
@@ -730,47 +730,169 @@ async def posts_directory_page(req):
     has_next_init = len(all_posts) > 20
     all_posts = all_posts[:20]
     
-    admin_btn = '''<button onclick="window.location.href='/admin/create_post'" style="background:var(--accent); color:#fff; border:none; padding:0 24px; border-radius:8px; font-weight:800; cursor:pointer; white-space:nowrap;">➕ Create</button>''' if role == 'admin' else ""
-    
-    search_ui = f'''<style>.dir-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }} @media(min-width: 768px) {{ .dir-grid {{ grid-template-columns: repeat(5, 1fr); gap: 20px; }} }} .search-box {{ background:var(--card); border:1px solid var(--border); padding:16px; border-radius:12px; margin-bottom:25px; box-shadow:0 4px 15px rgba(0,0,0,0.1); display:flex; gap:10px; }} .s-input {{ flex:1; background:var(--bg3); border:1px solid var(--border); padding:12px 16px; color:var(--text); border-radius:8px; outline:none; font-weight:600; font-size:14px; font-family:inherit; }} .pg-bar {{ display:flex; justify-content:center; align-items:center; gap:15px; margin-top:30px; }}</style><div class="search-box"><input type="text" id="post_q" class="s-input" placeholder="Search movies, series, posts..."><button onclick="resetPost(); searchPosts()" style="background:var(--bg4); color:var(--text); border:1px solid var(--border); padding:0 24px; border-radius:8px; font-weight:800; cursor:pointer;">Search</button>{admin_btn}</div>'''
+    create_btn = f'<a href="/admin/create_post" style="display:inline-flex;align-items:center;background:var(--accent);color:#fff;text-decoration:none;padding:0 16px;border-radius:8px;font-weight:800;font-size:13px;height:42px;white-space:nowrap;">➕ Create</a>' if role == 'admin' else ""
 
-    post_items = ""
-    for p in all_posts:
-        cover = p.get("cover_image", "")
-        img_src = f"/api/post/photo?id={cover.replace('TG_ID:', '')}" if cover.startswith("TG_ID:") else cover
-        post_items += f'''<div class="act-card card-enter" onclick="window.location.href='/post/{str(p["_id"])}'"><div style="position:relative; padding-top:135%; background:var(--bg3); overflow:hidden;"><img src="{img_src}" class="act-poster" loading="lazy"><div style="position:absolute; top:8px; left:8px; background:rgba(229,9,20,0.9); color:#fff; font-size:9px; padding:4px 8px; border-radius:4px; font-weight:800; backdrop-filter:blur(4px); z-index:2;">🎬 POST</div></div><div style="padding:12px; text-align:center;"><div style="font-size:13.5px; font-weight:800; color:var(--text); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">{html.escape(p.get("title", "Untitled"))}</div></div></div>'''
-    
-    initial_grid = f'<div id="post_grid_container" class="dir-grid">{post_items}</div>' if all_posts else '<div style="text-align:center; padding:60px 20px; color:var(--muted);">No posts found.</div>'
+    # web_assets already provides: .search-box, .s-input, .pg-btn, .pg-info, .act-card, .act-poster, .card-enter
+    # Only define what's new here: grid/list layouts + filter dropdowns
+    search_ui = f'''<style>
+.dir-grid{{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}}
+@media(min-width:600px){{.dir-grid{{grid-template-columns:repeat(3,1fr);gap:16px}}}}
+@media(min-width:900px){{.dir-grid{{grid-template-columns:repeat(5,1fr);gap:20px}}}}
+.dir-list{{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:10px;overflow:hidden}}
+.dir-list .act-card{{border-radius:0;border:none;border-bottom:1px solid var(--border);display:flex;flex-direction:row;align-items:center;gap:12px;padding:11px 14px;transform:none!important}}
+.dir-list .act-card:last-child{{border-bottom:none}}
+.dir-list .act-card .post-poster-wrap{{display:none}}
+.filter-row{{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}}
+.fdd-wrap{{position:relative}}
+.fdd-btn{{display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;transition:.15s}}
+.fdd-btn:hover,.fdd-btn.open{{border-color:var(--accent);color:var(--accent)}}
+.fdd-btn .arr{{font-size:9px;transition:transform .2s}}
+.fdd-btn.open .arr{{transform:rotate(180deg)}}
+.fdd-menu{{position:absolute;top:calc(100% + 6px);left:0;background:var(--bg2);border:1px solid var(--border);border-radius:10px;min-width:155px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:100;display:none;overflow:hidden}}
+.fdd-menu.open{{display:block}}
+.fdd-item{{padding:10px 14px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;transition:background .12s,color .12s}}
+.fdd-item:hover{{background:var(--bg3);color:var(--text)}}
+.fdd-item.sel{{color:var(--accent);font-weight:800;background:rgba(229,9,20,.07)}}
+.pg-bar{{display:flex;justify-content:center;align-items:center;gap:15px;margin-top:24px}}
+</style>
+<div class="search-box" style="flex-direction:column;gap:10px">
+    <div style="display:flex;gap:8px">
+        <input type="text" id="post_q" class="s-input" placeholder="Search movies, series, posts..." style="flex:1;min-width:0">
+        <button class="pg-btn" onclick="resetPost();searchPosts()">Search</button>
+        {create_btn}
+    </div>
+    <div class="filter-row">
+        <div class="fdd-wrap" id="viewDd">
+            <button class="fdd-btn" onclick="toggleDd('viewDd',event)"><span id="viewLabel">🖼️ Poster</span><span class="arr">▼</span></button>
+            <div class="fdd-menu" id="viewDdMenu">
+                <div class="fdd-item sel" onclick="setView('poster','viewDd','🖼️ Poster',this)">🖼️ Poster Mode</div>
+                <div class="fdd-item" onclick="setView('text','viewDd','📋 Text',this)">📋 Text Mode</div>
+            </div>
+        </div>
+        <div class="fdd-wrap" id="catDd">
+            <button class="fdd-btn" onclick="toggleDd('catDd',event)"><span id="catLabel">📂 All</span><span class="arr">▼</span></button>
+            <div class="fdd-menu" id="catDdMenu">
+                <div class="fdd-item sel" onclick="setCat('','catDd','📂 All',this)">📂 All</div>
+                <div class="fdd-item" onclick="setCat('Movies','catDd','🎬 Movies',this)">🎬 Movies</div>
+                <div class="fdd-item" onclick="setCat('Web Series','catDd','📺 Web Series',this)">📺 Web Series</div>
+                <div class="fdd-item" onclick="setCat('App Video','catDd','📱 App Video',this)">📱 App Video</div>
+                <div class="fdd-item" onclick="setCat('Porn','catDd','🔞 Porn',this)">🔞 Porn</div>
+            </div>
+        </div>
+    </div>
+</div>'''
 
-    js_logic = f'''<div class="pg-bar" id="post_pg_box" style="display:{'flex' if has_next_init else 'none'};"><button class="pg-btn" id="post_pBtn" onclick="prevPost()" disabled>Previous</button><span class="pg-info" id="post_pgInfo" style="font-weight:800;">Page 1</span><button class="pg-btn" id="post_nBtn" onclick="nextPost()">Next</button></div><script>var pOff = 0, pLim = 20, pPage = 1, pNext = {str(has_next_init).lower()}; async function searchPosts() {{ var q = document.getElementById('post_q').value.trim(); var grid = document.getElementById('post_grid_container'); grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--muted); font-weight:bold;">🔄 Searching Catalog...</div>'; try {{ var res = await fetch(`/api/posts/search?q=${{encodeURIComponent(q)}}&offset=${{pOff}}`); var data = await res.json(); grid.innerHTML = data.html; staggerCards(grid); pNext = data.has_next; updatePgUI(); }} catch(e) {{ grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--accent);">Error loading posts!</div>'; }} }} function updatePgUI() {{ var box = document.getElementById('post_pg_box'); box.style.display = (pOff === 0 && !pNext) ? 'none' : 'flex'; document.getElementById('post_pBtn').disabled = (pOff === 0); document.getElementById('post_nBtn').disabled = !pNext; document.getElementById('post_pgInfo').innerText = 'Page ' + pPage; }} function resetPost() {{ pOff = 0; pPage = 1; }} function nextPost() {{ if(pNext) {{ pOff += pLim; pPage++; searchPosts(); window.scrollTo(0, 50); }} }} function prevPost() {{ if(pOff > 0) {{ pOff = Math.max(0, pOff - pLim); pPage--; searchPosts(); window.scrollTo(0, 50); }} }} document.getElementById('post_q').addEventListener('keydown', e => {{ if(e.key === 'Enter') {{ resetPost(); searchPosts(); }} }}); document.addEventListener("DOMContentLoaded", () => {{ var grid = document.getElementById('post_grid_container'); if(grid && typeof staggerCards === 'function') staggerCards(grid); }});</script>'''
+    post_items = "".join(_post_card_html(p) for p in all_posts)
+    initial_grid = f'<div id="pgrid" class="dir-grid">{post_items}</div>' if all_posts else '<div style="text-align:center;padding:60px 20px;color:var(--muted)">No posts found.</div>'
 
-    return build_page("Posts Catalog", f'<div class="main" style="padding-top:20px; max-width:1100px; margin:0 auto; padding-left:20px; padding-right:20px;">{search_ui}{initial_grid}{js_logic}</div>', "", "posts", role)
+    js_logic = f'''<div class="pg-bar" id="ppgBox" style="display:{'flex' if has_next_init else 'none'}">
+    <button class="pg-btn" id="ppBtn" onclick="prevPost()" disabled>← Prev</button>
+    <span class="pg-info" id="ppInfo">Page 1</span>
+    <button class="pg-btn" id="pnBtn" onclick="nextPost()">Next →</button>
+</div>
+<script>
+var pOff=0,pLim=20,pPage=1,pNext={str(has_next_init).lower()};
+var curView=localStorage.getItem('postView')||'poster',curCat='';
+
+function toggleDd(id,e){{
+    e.stopPropagation();
+    var menu=document.getElementById(id).querySelector('.fdd-menu');
+    var btn=document.getElementById(id).querySelector('.fdd-btn');
+    var wasOpen=menu.classList.contains('open');
+    document.querySelectorAll('.fdd-menu.open').forEach(function(m){{m.classList.remove('open');}});
+    document.querySelectorAll('.fdd-btn.open').forEach(function(b){{b.classList.remove('open');}});
+    if(!wasOpen){{menu.classList.add('open');btn.classList.add('open');}}
+}}
+document.addEventListener('click',function(){{
+    document.querySelectorAll('.fdd-menu.open').forEach(function(m){{m.classList.remove('open');}});
+    document.querySelectorAll('.fdd-btn.open').forEach(function(b){{b.classList.remove('open');}});
+}});
+
+function setView(mode,ddId,label,el){{
+    curView=mode; localStorage.setItem('postView',mode);
+    document.getElementById('viewLabel').textContent=label;
+    document.querySelectorAll('#viewDdMenu .fdd-item').forEach(function(x){{x.classList.remove('sel');}});
+    el.classList.add('sel');
+    document.getElementById(ddId).querySelector('.fdd-menu').classList.remove('open');
+    document.getElementById(ddId).querySelector('.fdd-btn').classList.remove('open');
+    document.getElementById('pgrid').className=mode==='text'?'dir-list':'dir-grid';
+}}
+function setCat(cat,ddId,label,el){{
+    curCat=cat;
+    document.getElementById('catLabel').textContent=label;
+    document.querySelectorAll('#catDdMenu .fdd-item').forEach(function(x){{x.classList.remove('sel');}});
+    el.classList.add('sel');
+    document.getElementById(ddId).querySelector('.fdd-menu').classList.remove('open');
+    document.getElementById(ddId).querySelector('.fdd-btn').classList.remove('open');
+    resetPost(); searchPosts();
+}}
+async function searchPosts(){{
+    var q=document.getElementById('post_q').value.trim();
+    var grid=document.getElementById('pgrid');
+    grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--muted);font-weight:bold">🔄 Loading...</div>';
+    try{{
+        var r=await fetch('/api/posts/search?q='+encodeURIComponent(q)+'&offset='+pOff+'&cat='+encodeURIComponent(curCat));
+        var d=await r.json();
+        grid.innerHTML=d.html;
+        grid.className=curView==='text'?'dir-list':'dir-grid';
+        staggerCards(grid); pNext=d.has_next; updatePgUI();
+    }}catch(e){{grid.innerHTML='<div style="grid-column:1/-1;text-align:center;color:var(--accent)">Error loading posts!</div>';}}
+}}
+function updatePgUI(){{
+    document.getElementById('ppgBox').style.display=(pOff===0&&!pNext)?'none':'flex';
+    document.getElementById('ppBtn').disabled=(pOff===0);
+    document.getElementById('pnBtn').disabled=!pNext;
+    document.getElementById('ppInfo').textContent='Page '+pPage;
+}}
+function resetPost(){{pOff=0;pPage=1;}}
+function nextPost(){{if(pNext){{pOff+=pLim;pPage++;searchPosts();window.scrollTo(0,50);}}}}
+function prevPost(){{if(pOff>0){{pOff=Math.max(0,pOff-pLim);pPage--;searchPosts();window.scrollTo(0,50);}}}}
+document.getElementById('post_q').addEventListener('keydown',function(e){{if(e.key==='Enter'){{resetPost();searchPosts();}}}});
+document.addEventListener('DOMContentLoaded',function(){{
+    if(curView==='text'){{
+        document.getElementById('pgrid').className='dir-list';
+        document.getElementById('viewLabel').textContent='📋 Text';
+        document.querySelectorAll('#viewDdMenu .fdd-item').forEach(function(el,i){{el.classList.toggle('sel',i===1);}});
+    }}
+    staggerCards(document.getElementById('pgrid'));
+}});
+</script>'''
+
+    return build_page("Posts Catalog", f'<div class="main" style="padding-top:20px;max-width:1100px;margin:0 auto;padding-left:14px;padding-right:14px">{search_ui}{initial_grid}{js_logic}</div>', "", "posts", role)
+
+def _post_card_html(p):
+    cover = p.get("cover_image", "")
+    img_src = f"/api/post/photo?id={cover.replace('TG_ID:', '')}" if cover.startswith("TG_ID:") else cover
+    title = html.escape(p.get("title", "Untitled"))
+    return (f'<div class="act-card card-enter" onclick="window.location.href=\'/post/{p["_id"]}\'">'
+            f'<div class="post-poster-wrap" style="position:relative;padding-top:135%;background:var(--bg3);overflow:hidden">'
+            f'<img src="{img_src}" class="act-poster" loading="lazy">'
+            f'<div style="position:absolute;top:8px;left:8px;background:rgba(229,9,20,.9);color:#fff;font-size:9px;padding:4px 8px;border-radius:4px;font-weight:800;backdrop-filter:blur(4px);z-index:2">🎬 POST</div>'
+            f'</div>'
+            f'<div style="padding:10px;text-align:center;font-size:13px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{title}</div>'
+            f'</div>')
 
 @post_routes.get('/api/posts/search')
 async def api_posts_search(req):
     role, _ = await get_auth(req)
     if not role: return web.json_response({"html": ""}, dumps=fast_json)
-    q = req.query.get("q", "").strip()
+    q   = req.query.get("q", "").strip()
+    cat = req.query.get("cat", "").strip()
     try: offset = int(req.query.get("offset", 0))
     except: offset = 0
     lim = 20
     query = {}
-    if q: 
+    if q:
         safe_q = re.escape(q)
         query["$or"] = [{"title": {"$regex": safe_q, "$options": "i"}}, {"tags": {"$regex": safe_q, "$options": "i"}}]
-        
+    if cat:
+        query["tags"] = {"$regex": re.escape(cat), "$options": "i"}
     docs = await posts_col.find(query).sort("created_at", -1).skip(offset).limit(lim + 1).to_list(length=lim + 1)
     has_next = len(docs) > lim
     docs = docs[:lim]
-    
-    if not docs: return web.json_response({"html": '<div style="grid-column:1/-1; text-align:center; color:var(--muted); padding:40px;">No posts matching your search.</div>', "has_next": False}, dumps=fast_json)
-        
-    html_out = ""
-    for p in docs:
-        cover = p.get("cover_image", "")
-        img_src = f"/api/post/photo?id={cover.replace('TG_ID:', '')}" if cover.startswith("TG_ID:") else cover
-        html_out += f'''<div class="act-card card-enter" onclick="window.location.href='/post/{str(p["_id"])}'"><div style="position:relative; padding-top:135%; background:var(--bg3); overflow:hidden;"><img src="{img_src}" class="act-poster" loading="lazy"><div style="position:absolute; top:8px; left:8px; background:rgba(229,9,20,0.9); color:#fff; font-size:9px; padding:4px 8px; border-radius:4px; font-weight:800; backdrop-filter:blur(4px); z-index:2;">🎬 POST</div></div><div style="padding:12px; text-align:center;"><div style="font-size:13.5px; font-weight:800; color:var(--text); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">{html.escape(p.get("title", "Untitled"))}</div></div></div>'''
-            
+    if not docs:
+        return web.json_response({"html": '<div style="grid-column:1/-1;text-align:center;color:var(--muted);padding:40px">No posts found.</div>', "has_next": False}, dumps=fast_json)
+    html_out = "".join(_post_card_html(p) for p in docs)
     return web.json_response({"html": html_out, "has_next": has_next}, dumps=fast_json)
 
 # ─────────────────────────────────────────────────────────
