@@ -489,7 +489,7 @@ async def posts_directory_page(req):
     has_next_init = len(all_posts) > 20
     all_posts = all_posts[:20]
     
-    admin_btn = '''<button onclick="window.location.href='/admin/create_post'" class="s-btn-primary" style="padding:12px 24px; border-radius:8px; font-weight:800; cursor:pointer; white-space:nowrap;">➕ Create</button>''' if role == 'admin' else ""
+    admin_btn = '''<button onclick="window.location.href='/admin/create_post'" style="background:var(--accent); color:#fff; border:none; padding:10px 15px; border-radius:8px; font-weight:800; cursor:pointer; font-size:13px; flex:1; min-width:130px; box-shadow:0 4px 15px rgba(229,9,20,0.3); transition:0.2s;">➕ Create</button>''' if role == 'admin' else ""
     
     search_ui = f'''
     <style>
@@ -497,12 +497,26 @@ async def posts_directory_page(req):
         @media(min-width: 768px) {{ 
             .dir-grid {{ grid-template-columns: repeat(5, 1fr); gap: 20px; }} 
         }} 
-        .search-box {{ background:var(--card); border:1px solid var(--border); padding:16px; border-radius:12px; margin-bottom:25px; box-shadow:0 4px 15px rgba(0,0,0,0.1); display:flex; flex-direction:column; gap:12px; }} 
-        .s-row {{ display:flex; gap:10px; width:100%; }}
-        .s-input {{ flex:1; background:var(--bg3); border:1px solid var(--border); padding:12px 16px; color:var(--text); border-radius:8px; outline:none; font-weight:600; font-size:14px; font-family:inherit; min-width:0; }} 
-        .s-btn {{ background:var(--bg4); color:var(--text); border:1px solid var(--border); padding:12px 24px; border-radius:8px; font-weight:800; cursor:pointer; white-space:nowrap; }}
-        .s-btn-primary {{ background:var(--accent); color:#fff; border:1px solid var(--accent); }}
+        .search-box {{ background:var(--card); border:1px solid var(--border); padding:16px; border-radius:12px; margin-bottom:25px; box-shadow:0 4px 15px rgba(0,0,0,0.1); }} 
+        .s-row-1 {{ display: flex; gap: 10px; margin-bottom: 12px; }}
+        .s-input {{ flex: 1; background:var(--bg3); border:1px solid var(--border); padding:12px 16px; color:var(--text); border-radius:8px; outline:none; font-family:inherit; font-weight:600; font-size:14px; transition:0.2s; }}
+        .s-input:focus {{ border-color:var(--accent); }}
+        .s-btn {{ background:var(--accent); color:#fff; border:none; padding:0 24px; border-radius:8px; font-weight:800; cursor:pointer; transition:0.2s; white-space:nowrap; }}
+        .s-btn:hover {{ background:var(--accent-hover); transform:scale(1.02); }}
+        
+        .s-row-2 {{ display: flex; gap: 10px; flex-wrap:wrap; align-items:center; }}
+        .cdd-wrap {{ position: relative; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; cursor: pointer; font-weight: 700; font-size: 13px; color: var(--text); flex: 1; min-width: 100px; display: flex; justify-content: space-between; align-items: center; user-select: none; transition:0.2s; }}
+        .cdd-wrap:hover {{ border-color: var(--accent); }}
+        .cdd-menu {{ position: absolute; top: calc(100% + 5px); left: 0; right: 0; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }}
+        .cdd-item {{ padding: 10px 14px; border-bottom: 1px solid var(--border); transition: 0.2s; }}
+        .cdd-item:last-child {{ border-bottom: none; }}
+        .cdd-item:hover {{ background: var(--bg3); color: var(--accent); }}
+        
         .pg-bar {{ display:flex; justify-content:center; align-items:center; gap:15px; margin-top:30px; }}
+        .pg-btn {{ background:var(--bg4); color:var(--text); border:1px solid var(--border); padding:8px 20px; border-radius:6px; font-weight:700; cursor:pointer; font-size:13px; transition:0.2s; }}
+        .pg-btn:hover:not(:disabled) {{ background:var(--accent); color:#fff; border-color:var(--accent); }}
+        .pg-btn:disabled {{ opacity:0.4; cursor:not-allowed; }}
+        .pg-info {{ color:var(--text); font-weight:800; font-size:14px; background:var(--bg3); padding:6px 14px; border-radius:6px; border:1px solid var(--border); }}
         
         /* 📄 Text View CSS overrides */
         .card-body {{ display: none; }}
@@ -512,23 +526,29 @@ async def posts_directory_page(req):
     </style>
     
     <div class="search-box">
-        <div class="s-row">
-            <input type="text" id="post_q" class="s-input" placeholder="Search movies, series, posts..." onkeydown="if(event.key==='Enter'){{ resetPost(); searchPosts(); }}">
+        <div class="s-row-1">
+            <input type="text" id="post_q" class="s-input" placeholder="Search movies, series, posts...">
             <button class="s-btn" onclick="resetPost(); searchPosts()">Search</button>
-            {admin_btn}
         </div>
-        <div class="s-row">
-            <select id="view_mode" class="s-input" style="cursor:pointer;" onchange="toggleViewMode(this.value)">
-                <option value="poster">🖼️ Poster View</option>
-                <option value="text">📄 Text View</option>
-            </select>
-            <select id="post_category" class="s-input" style="cursor:pointer;" onchange="resetPost(); searchPosts()">
-                <option value="All">📁 All Categories</option>
-                <option value="Movies">🎬 Movies</option>
-                <option value="Web Series">📺 Web Series</option>
-                <option value="App Video">📱 App Video</option>
-                <option value="Porn">🔞 Porn</option>
-            </select>
+        <div class="s-row-2">
+            <div class="cdd-wrap" onclick="togglePostCDD('view', event)">
+                <span id="post_view_lbl">🖼️ Poster</span> <span style="font-size:10px; color:var(--muted);">▼</span>
+                <div class="cdd-menu" id="post_view_menu">
+                    <div class="cdd-item" onclick="pickPostView('poster', '🖼️ Poster', event)">🖼️ Poster</div>
+                    <div class="cdd-item" onclick="pickPostView('text', '📄 Text', event)">📄 Text</div>
+                </div>
+            </div>
+            <div class="cdd-wrap" onclick="togglePostCDD('cat', event)">
+                <span id="post_cat_lbl">📁 All Categories</span> <span style="font-size:10px; color:var(--muted);">▼</span>
+                <div class="cdd-menu" id="post_cat_menu">
+                    <div class="cdd-item" onclick="pickPostCat('All', '📁 All Categories', event)">📁 All Categories</div>
+                    <div class="cdd-item" onclick="pickPostCat('Movies', '🎬 Movies', event)">🎬 Movies</div>
+                    <div class="cdd-item" onclick="pickPostCat('Web Series', '📺 Web Series', event)">📺 Web Series</div>
+                    <div class="cdd-item" onclick="pickPostCat('App Video', '📱 App Video', event)">📱 App Video</div>
+                    <div class="cdd-item" onclick="pickPostCat('Porn', '🔞 Porn', event)">🔞 Porn</div>
+                </div>
+            </div>
+            {admin_btn}
         </div>
     </div>
     '''
@@ -556,35 +576,92 @@ async def posts_directory_page(req):
     
     initial_grid = f'<div id="post_grid_container" class="dir-grid">{post_items}</div>' if all_posts else '<div style="text-align:center; padding:60px 20px; color:var(--muted);">No posts found.</div>'
 
-    js_logic = f'''<div class="pg-bar" id="post_pg_box" style="display:{'flex' if has_next_init else 'none'};"><button class="pg-btn" id="post_pBtn" onclick="prevPost()" disabled>Previous</button><span class="pg-info" id="post_pgInfo" style="font-weight:800;">Page 1</span><button class="pg-btn" id="post_nBtn" onclick="nextPost()">Next</button></div>
-    <script>
-        var pOff = 0, pLim = 20, pPage = 1, pNext = {str(has_next_init).lower()}; 
-        
-        function toggleViewMode(val) {{
-            const grid = document.getElementById('post_grid_container');
-            if(val === 'text') grid.classList.add('grid-text-mode');
-            else grid.classList.remove('grid-text-mode');
-        }}
+    has_nxt_str = "true" if has_next_init else "false"
 
-        async function searchPosts() {{ 
-            var q = document.getElementById('post_q').value.trim(); 
-            var cat = document.getElementById('post_category').value;
-            var grid = document.getElementById('post_grid_container'); 
-            grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--muted); font-weight:bold;">🔄 Searching Catalog...</div>'; 
-            try {{ 
-                var res = await fetch(`/api/posts/search?q=${{encodeURIComponent(q)}}&offset=${{pOff}}&category=${{encodeURIComponent(cat)}}`); 
-                var data = await res.json(); 
-                grid.innerHTML = data.html; 
-                staggerCards(grid); 
-                pNext = data.has_next; 
-                updatePgUI(); 
-            }} catch(e) {{ grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--accent);">Error loading posts!</div>'; }} 
-        }} 
-        function updatePgUI() {{ var box = document.getElementById('post_pg_box'); box.style.display = (pOff === 0 && !pNext) ? 'none' : 'flex'; document.getElementById('post_pBtn').disabled = (pOff === 0); document.getElementById('post_nBtn').disabled = !pNext; document.getElementById('post_pgInfo').innerText = 'Page ' + pPage; }} 
-        function resetPost() {{ pOff = 0; pPage = 1; }} 
-        function nextPost() {{ if(pNext) {{ pOff += pLim; pPage++; searchPosts(); window.scrollTo(0, 50); }} }} 
-        function prevPost() {{ if(pOff > 0) {{ pOff = Math.max(0, pOff - pLim); pPage--; searchPosts(); window.scrollTo(0, 50); }} }} 
-        document.addEventListener("DOMContentLoaded", () => {{ var grid = document.getElementById('post_grid_container'); if(grid && typeof staggerCards === 'function') staggerCards(grid); }}); 
+    js_logic = f'''
+    <div class="pg-bar" id="post_pg_box" style="display:none;">
+        <button class="pg-btn" id="post_pBtn" onclick="prevPost()" disabled>Previous</button>
+        <span class="pg-info" id="post_pgInfo">Page 1</span>
+        <button class="pg-btn" id="post_nBtn" onclick="nextPost()">Next</button>
+    </div>
+
+    <script>
+    var pOff = 0, pLim = 20, pPage = 1;
+    var pNext = {has_nxt_str};
+    var currentPCat = 'All'; var currentPView = 'poster';
+    var lastPQ = "", lastPCat = "All", lastPView = "poster", lastPOff = 0;
+
+    document.addEventListener("DOMContentLoaded", () => {{
+        if(sessionStorage.getItem('ff_post_state')) {{
+            document.getElementById('post_q').value = sessionStorage.getItem('ff_post_q') || "";
+            currentPCat = sessionStorage.getItem('ff_post_cat') || "All";
+            currentPView = sessionStorage.getItem('ff_post_view') || "poster";
+            pOff = parseInt(sessionStorage.getItem('ff_post_off') || "0");
+            pPage = parseInt(sessionStorage.getItem('ff_post_page') || "1");
+
+            const catMap = {{'All':'📁 All Categories', 'Movies':'🎬 Movies', 'Web Series':'📺 Web Series', 'App Video':'📱 App Video', 'Porn':'🔞 Porn'}};
+            const viewMap = {{'poster':'🖼️ Poster', 'text':'📄 Text'}};
+            document.getElementById('post_cat_lbl').innerText = catMap[currentPCat] || '📁 All Categories';
+            document.getElementById('post_view_lbl').innerText = viewMap[currentPView] || '🖼️ Poster';
+
+            searchPosts(true);
+        }} else {{
+            updatePgUI();
+            staggerCards(document.getElementById('post_grid_container'));
+        }}
+    }});
+
+    function closeAllPostCDD() {{ document.getElementById('post_view_menu').style.display='none'; document.getElementById('post_cat_menu').style.display='none'; }}
+    document.addEventListener('click', closeAllPostCDD);
+
+    function togglePostCDD(type, e) {{
+        e.stopPropagation();
+        var menu = document.getElementById('post_' + type + '_menu');
+        var isVis = menu.style.display === 'block';
+        closeAllPostCDD();
+        if (!isVis) menu.style.display = 'block';
+    }}
+
+    function pickPostView(val, lbl, e) {{ e.stopPropagation(); currentPView = val; document.getElementById('post_view_lbl').innerText = lbl; closeAllPostCDD(); applyPostViewMode(); resetPost(); searchPosts(); }}
+    function pickPostCat(val, lbl, e) {{ e.stopPropagation(); currentPCat = val; document.getElementById('post_cat_lbl').innerText = lbl; closeAllPostCDD(); resetPost(); searchPosts(); }}
+
+    function applyPostViewMode() {{
+        var grid = document.getElementById('post_grid_container');
+        if(currentPView === 'text') grid.classList.add('grid-text-mode');
+        else grid.classList.remove('grid-text-mode');
+    }}
+
+    async function searchPosts(forceRestore = false) {{
+        var q = document.getElementById('post_q').value.trim();
+
+        if (!forceRestore && q === lastPQ && currentPCat === lastPCat && currentPView === lastPView && pOff === lastPOff) {{ return; }}
+
+        lastPQ = q; lastPCat = currentPCat; lastPView = currentPView; lastPOff = pOff;
+
+        sessionStorage.setItem('ff_post_state', '1');
+        sessionStorage.setItem('ff_post_q', q);
+        sessionStorage.setItem('ff_post_cat', currentPCat);
+        sessionStorage.setItem('ff_post_view', currentPView);
+        sessionStorage.setItem('ff_post_off', pOff);
+        sessionStorage.setItem('ff_post_page', pPage);
+
+        var grid = document.getElementById('post_grid_container');
+        grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--muted); font-weight:bold;">🔄 Searching Catalog...</div>';
+        try {{
+            var res = await fetch(`/api/posts/search?q=${{encodeURIComponent(q)}}&offset=${{pOff}}&category=${{encodeURIComponent(currentPCat)}}`);
+            var data = await res.json();
+            grid.innerHTML = data.html;
+            staggerCards(grid);
+            pNext = data.has_next;
+            applyPostViewMode();
+            updatePgUI();
+        }} catch(e) {{ grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--accent);">Error loading posts!</div>'; }}
+    }}
+    function updatePgUI() {{ var box = document.getElementById('post_pg_box'); box.style.display = (pOff === 0 && !pNext) ? 'none' : 'flex'; document.getElementById('post_pBtn').disabled = (pOff === 0); document.getElementById('post_nBtn').disabled = !pNext; document.getElementById('post_pgInfo').innerText = 'Page ' + pPage; }}
+    function resetPost() {{ pOff = 0; pPage = 1; }}
+    function nextPost() {{ if(pNext) {{ pOff += pLim; pPage++; searchPosts(); window.scrollTo(0, 50); }} }}
+    function prevPost() {{ if(pOff > 0) {{ pOff = Math.max(0, pOff - pLim); pPage--; searchPosts(); window.scrollTo(0, 50); }} }}
+    document.getElementById('post_q').addEventListener('keydown', function(e) {{ if(e.key === 'Enter') {{ resetPost(); searchPosts(); }} }});
     </script>'''
 
     return build_page("Posts Catalog", f'<div class="main" style="padding-top:20px; max-width:1100px; margin:0 auto; padding-left:20px; padding-right:20px;">{search_ui}{initial_grid}{js_logic}</div>', "", "posts", role)
