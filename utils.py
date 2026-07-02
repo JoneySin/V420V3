@@ -61,6 +61,19 @@ async def is_check_admin(bot, chat_id, user_id):
         return False
 
 # ─────────────────────────────────────────────
+# 🌍 SHARED LOCAL-TIME HELPER (naive datetime, TIME_ZONE-aware)
+# ─────────────────────────────────────────────
+# ⚠️ नोट: database/users_chats_db.py में भी एक get_local_now() है, लेकिन वो
+# tzinfo-AWARE datetime लौटाता है (delete-queue scheduling के लिए)। यह वाला
+# जानबूझकर naive (tzinfo-stripped) रखा गया है क्योंकि premium plan के 'expire'
+# स्ट्रिंग्स strptime से naive datetime के रूप में पार्स होते हैं और naive vs
+# tz-aware datetime compare करने पर Python TypeError देता है। इसलिए दोनों को
+# जानबूझकर अलग रखा गया है, मर्ज मत करना।
+def get_local_now():
+    tz = pytz.timezone(TIME_ZONE)
+    return datetime.now(tz).replace(tzinfo=None)
+
+# ─────────────────────────────────────────────
 # 💎 PREMIUM AUTO-VALIDATOR (Perfect info.py TIME_ZONE Sync)
 # ─────────────────────────────────────────────
 async def is_premium(user_id, bot=None):
@@ -81,8 +94,7 @@ async def is_premium(user_id, bot=None):
                 expire = None
         
         # ✅ FIX: हार्डकोडिंग हटाकर 'info.py' के कस्टमाइज्ड 'TIME_ZONE' से शुद्ध सिंक कॉम्पैरिजन
-        local_tz = pytz.timezone(TIME_ZONE)
-        now_local = datetime.now(local_tz).replace(tzinfo=None)
+        now_local = get_local_now()
         
         if not expire or expire < now_local:
             if bot:
