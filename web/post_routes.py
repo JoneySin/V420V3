@@ -7,7 +7,7 @@ from bson.objectid import ObjectId
 from utils import temp
 from info import THUMBNAIL_STORAGE_CHANNEL
 from database.users_chats_db import db as motor_db
-from web.web_assets import build_page, get_auth
+from web.web_assets import build_page, get_auth, require_active_plan
 
 post_routes = web.RouteTableDef()
 posts_col = motor_db.db["Posts"]
@@ -437,8 +437,9 @@ async def get_post_photo(req):
 # ─────────────────────────────────────────────────────────
 @post_routes.get('/posts')
 async def posts_directory_page(req):
-    role, _ = await get_auth(req)
+    role, tg_id = await get_auth(req)
     if not role: return web.HTTPFound('/login')
+    if not await require_active_plan(role, tg_id): return web.HTTPFound('/premium_expired')
     
     all_posts = await posts_col.find({}).sort("created_at", -1).limit(21).to_list(length=21)
     has_next_init = len(all_posts) > 20
@@ -674,8 +675,9 @@ async def api_posts_search(req):
 # ─────────────────────────────────────────────────────────
 @post_routes.get('/post/{id}')
 async def single_post_display(req):
-    role, _ = await get_auth(req)
+    role, tg_id = await get_auth(req)
     if not role: return web.HTTPFound('/login')
+    if not await require_active_plan(role, tg_id): return web.HTTPFound('/premium_expired')
     
     try:
         post = await posts_col.find_one({"_id": ObjectId(req.match_info['id'])})
