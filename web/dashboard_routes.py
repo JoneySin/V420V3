@@ -1,6 +1,5 @@
 from aiohttp import web
-from web.web_assets import build_page, get_auth, form_wrapper, MAX_WEB_RESULTS
-from database.users_chats_db import db as user_db
+from web.web_assets import build_page, get_auth, form_wrapper, MAX_WEB_RESULTS, require_active_plan
 from utils import temp
 
 dashboard_routes = web.RouteTableDef()
@@ -304,10 +303,8 @@ async def dash(req):
     role, tg_id = await get_auth(req)
     if not role:
         return web.HTTPFound('/login')
-    if role == 'user':
-        mp = await user_db.get_plan(tg_id)
-        if not mp.get("premium"):
-            return web.HTTPFound('/premium_expired')
+    if not await require_active_plan(role, tg_id):
+        return web.HTTPFound('/premium_expired')
 
     return build_page("Home - Fast Finder", DASHBOARD_BODY, "", "dash", role)
 
