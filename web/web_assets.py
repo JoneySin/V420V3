@@ -2,6 +2,7 @@ import time
 from aiohttp import web
 from info import ADMINS, MAX_WEB_RESULTS
 from utils import temp
+from database.users_chats_db import db as user_db
 
 # ----------------- ULTRA-PREMIUM GLASS DIAGNOSTICS ASSETS -----------------
 CSS = """
@@ -278,6 +279,18 @@ async def get_auth(req):
         if tg_id in ADMINS: return 'admin', tg_id
         return 'user', tg_id
     return None, None
+
+# ✅ FIX: यह एक ही जगह से premium/plan चेक करने वाला shared helper है।
+# पहले सिर्फ dashboard_routes.py अपने अंदर यह चेक करता था, actors/posts पेज नहीं करते थे
+# जिससे expired user login करके /actors और /posts freely खोल सकता था (sync issue)।
+# अब सभी route files (dashboard, actors, posts) इसी एक function को call करेंगे,
+# ताकि logic कहीं भी duplicate न हो और तीनों जगह एक जैसा behave करे।
+async def require_active_plan(role, tg_id):
+    """Admin हमेशा allowed. 'user' role के लिए plan.premium चेक होता है।"""
+    if role != 'user':
+        return True
+    mp = await user_db.get_plan(tg_id)
+    return bool(mp.get("premium"))
 
 def build_page(title, body, cls="", active_tab="", role=None):
     if role == 'admin': 
