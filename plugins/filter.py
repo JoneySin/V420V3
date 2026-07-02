@@ -256,7 +256,8 @@ async def auto_filter(client, msg, collection_type="all", settings=None):
     check_cache_limit() 
     search = msg.text.strip()
     
-    files, next_offset, total, act_src = await get_search_results(search, MAX_BOT_RESULTS, 0, collection_type=collection_type)
+    counts_out = {}
+    files, next_offset, total, act_src = await get_search_results(search, MAX_BOT_RESULTS, 0, collection_type=collection_type, counts_out=counts_out)
 
     if not settings: settings = await get_settings(msg.chat.id)
     is_simple_mode = settings.get("simple_mode", True)
@@ -281,7 +282,7 @@ async def auto_filter(client, msg, collection_type="all", settings=None):
 
     key = f"{msg.chat.id}-{msg.id}"
     temp.FILES[key] = files
-    BUTTONS[key] = search
+    BUTTONS[key] = {"query": search, "counts": {collection_type: counts_out}}
 
     cap, markup = get_filter_ui(search, files, total, act_src, 0, msg.chat.id, msg.from_user.id, key, next_offset, is_simple_mode)
 
@@ -330,14 +331,15 @@ async def spell_check_handler(client, query):
             return await query.answer("❌ This suggestion is not for you!", show_alert=True)
             
         await query.answer(f"🔍 Searching for {suggestion}...", show_alert=False)
-        files, next_offset, total, act_src = await get_search_results(suggestion, MAX_BOT_RESULTS, 0, collection_type="all")
+        counts_out = {}
+        files, next_offset, total, act_src = await get_search_results(suggestion, MAX_BOT_RESULTS, 0, collection_type="all", counts_out=counts_out)
         
         if not files:
             return await query.message.edit_text(f"❌ Still no results found for **{suggestion}**.")
             
         key = f"{query.message.chat.id}-{query.message.id}"
         temp.FILES[key] = files
-        BUTTONS[key] = suggestion
+        BUTTONS[key] = {"query": suggestion, "counts": {"all": counts_out}}
         
         settings = await get_settings(query.message.chat.id)
         is_simple_mode = settings.get("simple_mode", True)
@@ -367,14 +369,23 @@ async def pagination_handler(client, query):
     if IS_PREMIUM and query.from_user.id not in ADMINS and not await is_premium(query.from_user.id, client): 
         return await query.answer("❌ Premium Expired!", show_alert=True)
 
-    search = BUTTONS.get(key)
-    if not search: return await query.answer("❌ Search Expired!", show_alert=True)
+    entry = BUTTONS.get(key)
+    if not entry: return await query.answer("❌ Search Expired!", show_alert=True)
+    search = entry["query"]
 
     # ✅ Default fallback changed to "all" to support multi-collection scrolling 
     offset, coll_short = (int(data[3]), data[4]) if action == "nav" else (0, data[3])
     coll_type = SHORT_TO_SRC.get(coll_short, "all")
 
-    files, next_off, total, act_src = await get_search_results(search, MAX_BOT_RESULTS, offset, collection_type=coll_type)
+    # ⚡ Isi tab ke liye count pehle se cached hai to dobara count_documents na chale (fast pagination)
+    cached = entry["counts"].get(coll_type)
+    counts_out = {}
+    files, next_off, total, act_src = await get_search_results(
+        search, MAX_BOT_RESULTS, offset, collection_type=coll_type,
+        cached_counts=cached, counts_out=counts_out
+    )
+    if counts_out:
+        entry["counts"][coll_type] = counts_out
     
     if not files:
         err = "❌ No more pages!" if action == "nav" else f"❌ No files in {coll_type.upper()}"
