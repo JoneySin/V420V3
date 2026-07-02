@@ -181,7 +181,7 @@ async def _search(col, raw_query: str, regex, offset: int, limit: int, lang=None
         if lang: text_flt = {"$and": [text_flt, {"file_name": re.compile(lang, re.IGNORECASE)}]}
 
         cursor = col.find(text_flt, {"_id": 1, "file_name": 1, "file_size": 1, "file_type": 1, "file_ref": 1, "caption": 1, "thumb_url": 1, "score": {"$meta": "textScore"}})
-        cursor.sort([("score", {"$meta": "textScore"})])
+        cursor.sort([("score", {"$meta": "textScore"}), ("_id", -1)])
         cursor.skip(offset).limit(limit)
         docs = await cursor.to_list(length=limit)
         if docs:
@@ -212,7 +212,7 @@ async def get_count(col, flt, bypass):
 # ─────────────────────────────────────────────────────────
 # 🌐 PUBLIC SEARCH API (NEW UPGRADE: CROSS-COLLECTION MERGE)
 # ─────────────────────────────────────────────────────────
-async def get_search_results(query, max_results, offset=0, lang=None, collection_type="primary", bypass_count=False):
+async def get_search_results(query, max_results, offset=0, lang=None, collection_type="primary", bypass_count=False, cached_counts=None, counts_out=None):
     if not query: return [], "", 0, collection_type
     raw_query  = str(query).strip()
     regex      = _build_regex(raw_query)
@@ -240,13 +240,19 @@ async def get_search_results(query, max_results, offset=0, lang=None, collection
 
         if not flt: return [], "", 0, collection_type
 
-        cnt_p, cnt_c, cnt_a = await asyncio.gather(
-            get_count(primary, flt, bypass_count),
-            get_count(cloud, flt, bypass_count),
-            get_count(archive, flt, bypass_count)
-        )
+        # ⚡ FAST PAGINATION: अगर पिछली search से counts cache में मिल गए, तो दोबारा count_documents मत चलाओ
+        if cached_counts and all(k in cached_counts for k in ("cnt_p", "cnt_c", "cnt_a")):
+            cnt_p, cnt_c, cnt_a = cached_counts["cnt_p"], cached_counts["cnt_c"], cached_counts["cnt_a"]
+        else:
+            cnt_p, cnt_c, cnt_a = await asyncio.gather(
+                get_count(primary, flt, bypass_count),
+                get_count(cloud, flt, bypass_count),
+                get_count(archive, flt, bypass_count)
+            )
 
         total = cnt_p + cnt_c + cnt_a
+        if counts_out is not None:
+            counts_out["cnt_p"], counts_out["cnt_c"], counts_out["cnt_a"] = cnt_p, cnt_c, cnt_a
 
         sources = []
         if cnt_p > 0: sources.append("Primary")
@@ -272,7 +278,7 @@ async def get_search_results(query, max_results, offset=0, lang=None, collection
 
             cursor = col.find(flt, {"_id": 1, "file_name": 1, "file_size": 1, "file_type": 1, "file_ref": 1, "caption": 1, "thumb_url": 1})
             if is_text:
-                cursor = cursor.sort([("score", {"$meta": "textScore"})])
+                cursor = cursor.sort([("score", {"$meta": "textScore"}), ("_id", -1)])
             else:
                 cursor = cursor.sort('_id', -1)
 
@@ -289,7 +295,14 @@ async def get_search_results(query, max_results, offset=0, lang=None, collection
 
     else:
         col = COLLECTIONS.get(collection_type, primary)
-        results, total = await _search(col, raw_query, regex, offset, max_results, lang, bypass_count=bypass_count)
+        # ⚡ FAST PAGINATION: cached total मिल गया तो सिर्फ docs fetch करो, count_documents skip करो
+        if cached_counts and "total" in cached_counts:
+            results, _ = await _search(col, raw_query, regex, offset, max_results, lang, bypass_count=True)
+            total = cached_counts["total"]
+        else:
+            results, total = await _search(col, raw_query, regex, offset, max_results, lang, bypass_count=bypass_count)
+            if counts_out is not None:
+                counts_out["total"] = total
         actual_src = collection_type.capitalize()
         if not results: total = 0
 
