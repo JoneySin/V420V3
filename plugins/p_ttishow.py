@@ -6,8 +6,9 @@ import gc
 from hydrogram import Client, filters, enums
 from info import ADMINS, LOG_CHANNEL, PICS, IS_PREMIUM
 from database.users_chats_db import db
-from plugins.premium import is_premium # प्रीमियम वैलिडेशन इंजन सिंक
-from utils import temp, get_settings
+
+# ✅ FIX: is_premium को अब plugins.premium की जगह utils से इम्पोर्ट किया गया है
+from utils import is_premium, temp, get_settings 
 from Script import script
 
 logger = logging.getLogger(__name__)
