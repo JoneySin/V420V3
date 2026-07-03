@@ -3,6 +3,10 @@ from web.web_assets import build_page, get_auth
 # ✅ FIX: actors कलेक्शन को इम्पोर्ट किया गया ताकि हम प्रोफाइल्स गिन सकें
 from database.ia_filterdb import db_count_documents, actors
 from database.users_chats_db import db as user_db
+from info import PORT
+# ✅ NEW: post_routes.py में पहले से मौजूद posts_col को ही reuse किया,
+# दोबारा motor_db.db["Posts"] से नया collection object नहीं बनाया
+from web.post_routes import posts_col
 
 stats_routes = web.RouteTableDef()
 
@@ -76,17 +80,22 @@ _STATS_JS = """<script>
 })();
 
 // Flush RAM Cache functionality
+// ✅ FIX: पहले यह सिर्फ़ setTimeout से "cleared" दिखा देता था, कोई असली API call नहीं थी
 async function triggerCacheFlush() {
     var btn = document.getElementById('flushBtn');
     var originalText = btn.innerHTML;
     btn.innerHTML = '⏳ Flushing...';
     btn.disabled = true;
     try {
-        await new Promise(resolve => setTimeout(resolve, 800));
+        let r = await fetch('/api/flush_cache', {method:'POST'});
+        let d = await r.json().catch(() => ({}));
+        if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
         btn.style.color = '#28a745';
         btn.style.borderColor = '#28a745';
         btn.innerHTML = '✅ Cache Cleared!';
     } catch(e) {
+        btn.style.color = '#e50914';
+        btn.style.borderColor = '#e50914';
         btn.innerHTML = '❌ Error';
     } setTimeout(() => {
         btn.innerHTML = originalText;
@@ -133,6 +142,26 @@ async def stats(req):
         act_dir = tot_dir - app_dir - web_dir
     except:
         tot_dir = app_dir = web_dir = act_dir = 0
+
+    # ─── 📝 POST CREATION STATS (Movies / Web Series / App Video / Porn) ───
+    # post_routes.py के "category" फील्ड ("Movies", "Web Series", "App Video", "Porn")
+    # पर group-by करके गिनती निकाली जाती है, पूरा array in-memory लोड करने की बजाय
+    # MongoDB aggregation से ही count हो जाता है (हल्का और तेज़)
+    try:
+        raw_post_counts = {}
+        pipeline = [{"$group": {"_id": {"$ifNull": ["$category", "Uncategorized"]}, "count": {"$sum": 1}}}]
+        async for doc in posts_col.aggregate(pipeline):
+            raw_post_counts[doc["_id"]] = doc["count"]
+    except:
+        raw_post_counts = {}
+
+    post_movies = raw_post_counts.get("Movies", 0)
+    post_webseries = raw_post_counts.get("Web Series", 0)
+    post_appvid = raw_post_counts.get("App Video", 0)
+    post_porn = raw_post_counts.get("Porn", 0)
+    post_total = sum(raw_post_counts.values())
+    # कोई पुराना/कस्टम category value जो ऊपर के 4 fixed buckets में फिट नहीं होता
+    post_other = post_total - post_movies - post_webseries - post_appvid - post_porn
 
     p_tot, c_tot, a_tot = s.get('primary', 0), s.get('cloud', 0), s.get('archive', 0)
     grand_total = s.get('total', 1) or 1
@@ -242,10 +271,36 @@ async def stats(req):
             </div>
         </div>
     </div>
+
+    <div class="st-card anim-card">
+        <div class="st-card-bar" style="background:#00d2c4;"></div>
+        <div class="st-label">Content Posts Created</div>
+        <div class="st-val" style="color:#00d2c4;" data-count="{post_total}" data-delay="380">{post_total:,}</div>
+        <div class="st-sub">Total posts published across all categories</div>
+        <div class="user-sub-row">
+            <div class="user-sub-cell">
+                <div class="user-sub-cell-lbl">🎬 Movies</div>
+                <div class="user-sub-cell-val" style="color:#3399ff;" data-count="{post_movies}" data-delay="400">{post_movies:,}</div>
+            </div>
+            <div class="user-sub-cell">
+                <div class="user-sub-cell-lbl">📺 Web Series</div>
+                <div class="user-sub-cell-val" style="color:#ff9933;" data-count="{post_webseries}" data-delay="420">{post_webseries:,}</div>
+            </div>
+            <div class="user-sub-cell">
+                <div class="user-sub-cell-lbl">📱 App Video</div>
+                <div class="user-sub-cell-val" style="color:#28a745;" data-count="{post_appvid}" data-delay="440">{post_appvid:,}</div>
+            </div>
+            <div class="user-sub-cell">
+                <div class="user-sub-cell-lbl">🔞 Porn</div>
+                <div class="user-sub-cell-val" style="color:#e50914;" data-count="{post_porn}" data-delay="460">{post_porn:,}</div>
+            </div>
+            {f'<div class="user-sub-cell" style="grid-column: span 2; display: flex; justify-content: space-between; align-items: center;"><div class="user-sub-cell-lbl" style="margin:0;">🗂️ Other/Uncategorized</div><div class="user-sub-cell-val" style="color:var(--muted);" data-count="{post_other}" data-delay="480">{post_other:,}</div></div>' if post_other > 0 else ''}
+        </div>
+    </div>
     </div>
   <div class="telemetry-title anim-card">💻 Server Core Telemetry Diagnostics</div>
   <div class="telemetry-grid">
-    <div class="t-card anim-card"><div class="t-dot t-dot-pulse" style="background:#28a745;"></div><div><div class="t-lbl">Koyeb Worker Pod</div><div class="t-val" style="color:#28a745;">🟢 Operational</div><div class="t-sub">Port 8000 · 0 errors</div></div></div>
+    <div class="t-card anim-card"><div class="t-dot t-dot-pulse" style="background:#28a745;"></div><div><div class="t-lbl">Koyeb Worker Pod</div><div class="t-val" style="color:#28a745;">🟢 Operational</div><div class="t-sub">Port {PORT} · 0 errors</div></div></div>
     <div class="t-card anim-card"><div class="t-dot" style="background:#3399ff;"></div><div><div class="t-lbl">Database I/O Pool</div><div class="t-val" style="color:#3399ff;">15 Connections Max</div><div class="t-sub">Active pool · healthy</div></div></div>
     <div class="t-card anim-card"><div class="t-dot" style="background:#ff9933;"></div><div><div class="t-lbl">RAM Protection Guard</div><div class="t-val" style="color:#ff9933;">Strictly Bounded</div><div class="t-sub">Enforced memory limit</div></div></div>
   </div>
