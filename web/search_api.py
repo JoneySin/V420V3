@@ -18,7 +18,7 @@ from utils import temp, get_size, is_rate_limited, is_premium
 # ✅ SYNC: THUMBNAIL_STORAGE_CHANNEL को इम्पोर्ट किया गया है पृथक स्टोरेज के लिए
 from info import BIN_CHANNEL, ADMINS, BOT_TOKEN, MAX_WEB_RESULTS, MAX_THUMB_CACHE, IS_PREMIUM, USE_CAPTION_FILTER, THUMBNAIL_STORAGE_CHANNEL
 # यहाँ db_stats के लिए 'db as filter_db' ऐड किया गया है
-from database.ia_filterdb import COLLECTIONS, get_search_results, db as filter_db
+from database.ia_filterdb import COLLECTIONS, get_search_results, db as filter_db, delete_single_file
 from database.users_chats_db import db
 # ✅ SYNC FIX: cookie-session identity check अब यहाँ दोबारा नहीं लिखा, web_assets से reuse हो रहा है
 from web.web_assets import get_auth as web_get_auth
@@ -413,8 +413,9 @@ async def api_delete(req):
         col = data.get("collection", "primary").lower()
         if col not in COLLECTIONS:
             return web.json_response({"error": "Invalid target collection!"}, status=400, dumps=fast_json)
-        res = await COLLECTIONS[col].delete_one({"_id": fid})
-        return web.json_response({"success": bool(res.deleted_count)}, dumps=fast_json)
+        # ✅ NEW: डिलीट से पहले DELETE_CHANNEL में बैकअप भेजा जाता है (delete_single_file के अंदर)
+        success = await delete_single_file(fid, col)
+        return web.json_response({"success": success}, dumps=fast_json)
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500, dumps=fast_json)
 
