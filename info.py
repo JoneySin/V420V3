@@ -78,6 +78,11 @@ if not BIN_CHANNEL:
 ACTOR_STORAGE_CHANNEL = int(environ.get("ACTOR_STORAGE_CHANNEL", BIN_CHANNEL))
 THUMBNAIL_STORAGE_CHANNEL = int(environ.get("THUMBNAIL_STORAGE_CHANNEL", BIN_CHANNEL))
 
+# 🗑️ [NEW FEATURE] डिलीट-बैकअप चैनल — बॉट या वेब से कोई फाइल डिलीट होने से पहले
+# यहाँ फॉरवर्ड/रीसेंड की जाती है ताकि गलती से डिलीट होने पर भी फाइल रिकवर हो सके।
+# (सेट नहीं है तो सुरक्षित रूप से LOG_CHANNEL पर फॉल-बैक होगा)
+DELETE_CHANNEL = int(environ.get("DELETE_CHANNEL", LOG_CHANNEL))
+
 # ─────────────────────────────────────────────
 # 🗄️ DATABASE CONNECTION URL
 # ─────────────────────────────────────────────
