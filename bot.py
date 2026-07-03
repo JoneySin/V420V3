@@ -136,23 +136,26 @@ class Bot(Client):
         logger.info("🛡️ Premium Global Security Guard Activated")
 
         # 5. Persistent Hard Restart Logic Sync
+        local_tz = pytz.timezone(TIME_ZONE)
+
+        def build_status_msg():
+            now = datetime.now(local_tz)
+            return (
+                "🤖 <b>Bot Restarted!</b>\n\n"
+                "<blockquote>"
+                f"📅 <b>Date:</b> {now.strftime('%d %B %Y')}\n"
+                f"🕐 <b>Time:</b> {now.strftime('%I:%M:%S %p')}\n"
+                f"🌏 <b>Timezone:</b> {TIME_ZONE}"
+                "</blockquote>"
+            )
+
         if os.path.exists("restart.txt"):
             try:
                 with open("restart.txt", "r") as f:
                     content = f.read().strip().split()
                     if len(content) == 2:
                         chat_id, msg_id = map(int, content)
-                        local_tz = pytz.timezone(TIME_ZONE)
-                        now = datetime.now(local_tz)
-                        restart_msg = (
-                            "♻️ <b>Bot Restarted!</b>\n\n"
-                            "<blockquote>"
-                            f"📅 <b>Date:</b> {now.strftime('%d %B %Y')}\n"
-                            f"🕐 <b>Time:</b> {now.strftime('%I:%M:%S %p')}\n"
-                            f"🌏 <b>Timezone:</b> {TIME_ZONE}"
-                            "</blockquote>"
-                        )
-                        await self.edit_message_text(chat_id=chat_id, message_id=msg_id, text=restart_msg)
+                        await self.edit_message_text(chat_id=chat_id, message_id=msg_id, text=build_status_msg())
             except Exception as e:
                 logger.error(f"Restart message error: {e}")
             finally:
@@ -180,16 +183,7 @@ class Bot(Client):
 
         # 9. Send Startup Logs (Perfect info.py TIME_ZONE Sync)
         # ✅ FIX: हार्डकोडिंग हटाकर सीधे आपके कस्टमाइज्ड टाइमज़ोन इंजन से बाइंड किया गया
-        local_tz = pytz.timezone(TIME_ZONE)
-        now = datetime.now(local_tz)
-        startup_msg = (
-            f"🤖 <b>Fast Finder Bot Engine Online!</b>\n\n"
-            "<blockquote>"
-            f"📅 <b>Date:</b> {now.strftime('%d %B %Y')}\n"
-            f"🕐 <b>Time:</b> {now.strftime('%I:%M:%S %p')}\n"
-            f"🌏 <b>Timezone:</b> {TIME_ZONE}"
-            "</blockquote>"
-        )
+        startup_msg = build_status_msg()
 
         async def _safe_send(admin_id):
             try:
