@@ -142,7 +142,17 @@ class Bot(Client):
                     content = f.read().strip().split()
                     if len(content) == 2:
                         chat_id, msg_id = map(int, content)
-                        await self.edit_message_text(chat_id=chat_id, message_id=msg_id, text="<b>✅ Bot Restructured Session Rebuilt & Active!</b>")
+                        local_tz = pytz.timezone(TIME_ZONE)
+                        now = datetime.now(local_tz)
+                        restart_msg = (
+                            "♻️ <b>Bot Restarted!</b>\n\n"
+                            "<blockquote>"
+                            f"📅 <b>Date:</b> {now.strftime('%d %B %Y')}\n"
+                            f"🕐 <b>Time:</b> {now.strftime('%I:%M:%S %p')}\n"
+                            f"🌏 <b>Timezone:</b> {TIME_ZONE}"
+                            "</blockquote>"
+                        )
+                        await self.edit_message_text(chat_id=chat_id, message_id=msg_id, text=restart_msg)
             except Exception as e:
                 logger.error(f"Restart message error: {e}")
             finally:
@@ -174,11 +184,11 @@ class Bot(Client):
         now = datetime.now(local_tz)
         startup_msg = (
             f"🤖 <b>Fast Finder Bot Engine Online!</b>\n\n"
+            "<blockquote>"
             f"📅 <b>Date:</b> {now.strftime('%d %B %Y')}\n"
             f"🕐 <b>Time:</b> {now.strftime('%I:%M:%S %p')}\n"
-            f"🌏 <b>Timezone:</b> {TIME_ZONE}\n"
-            f"🛡️ <b>Security:</b> Strict Admin & Premium Only\n"
-            f"⚡ <b>Performance Engine:</b> uvloop + Motor Mode"
+            f"🌏 <b>Timezone:</b> {TIME_ZONE}"
+            "</blockquote>"
         )
 
         async def _safe_send(admin_id):
