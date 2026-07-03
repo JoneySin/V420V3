@@ -288,7 +288,13 @@ class Database:
                         ram_users.add(session_data.get("tg_id"))
 
             # 2. Database `web_users` कलेक्शन से पिछले 24 घंटे की लॉगिन हिस्ट्री चेक करें
-            today_start = datetime.now() - timedelta(days=1)
+            # ✅ BUG FIX: पहले यहाँ naive datetime.now() इस्तेमाल होता था, जबकि
+            # 'last_login' (login_routes.py में) इसी फाइल के tz-aware get_local_now()
+            # से लिखा जाता है। MongoDB tz-aware datetime को असली UTC में convert करके
+            # स्टोर करता है, पर naive datetime को ज्यों-का-त्यों UTC मान लेता है —
+            # नतीजा IST में करीब साढ़े 5 घंटे का mismatch (गलत count) आता था।
+            # अब write और read दोनों जगह वही get_local_now() इस्तेमाल हो रहा है।
+            today_start = get_local_now() - timedelta(days=1)
             db_cursor = self.db["web_users"].find({"last_login": {"$gte": today_start}}, {"tg_id": 1})
             async for user in db_cursor:
                 ram_users.add(user.get("tg_id"))
