@@ -62,7 +62,18 @@ async def profile_page(req):
     email = user.get('email', '') if user else ''
     mp = await user_db.get_plan(tg_id)
 
-    st_txt, exp_txt, st_clr = ("👑 Admin (Lifetime Access)", "Never (Lifetime)", "#e50914") if role == 'admin' else ("💎 Premium User", mp.get('expire', 'Unknown'), "#3399ff")
+    # ✅ BUG FIX (था पहले): role=='user' का मतलब सिर्फ़ 'valid session' है, premium
+    # active होना नहीं (get_auth() premium चेक नहीं करता) — इसलिए status text
+    # अब असली mp.get('premium') बूलियन के आधार पर तय होता है, hardcoded नहीं।
+    # ✅ BUG FIX (था पहले): mp.get('expire', 'Unknown') कभी 'Unknown' नहीं देता था
+    # क्योंकि 'expire' key हमेशा मौजूद रहती है (df_prm डिफॉल्ट में None के साथ) —
+    # non-premium user को literal "None" शब्द दिखता था। अब `or` से सही fallback है।
+    if role == 'admin':
+        st_txt, exp_txt, st_clr = "👑 Admin (Lifetime Access)", "Never (Lifetime)", "#e50914"
+    elif mp.get('premium'):
+        st_txt, exp_txt, st_clr = "💎 Premium User", (mp.get('expire') or 'Unknown'), "#3399ff"
+    else:
+        st_txt, exp_txt, st_clr = "🆓 Free Account (No Active Plan)", "Use /plan in Bot PM to activate", "#808080"
     err_h = f'<div class="err-box">{req.query.get("err", "")}</div>' if req.query.get('err') else ''
     msg_h = f'<div class="success-box">{req.query.get("msg", "")}</div>' if req.query.get('msg') else ''
 
