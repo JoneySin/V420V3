@@ -7,7 +7,9 @@ from struct import pack
 from bson.objectid import ObjectId
 import motor.motor_asyncio
 from hydrogram.file_id import FileId
-from info import DATABASE_URL, DATABASE_NAME, USE_CAPTION_FILTER
+from hydrogram.errors import FloodWait
+from info import DATABASE_URL, DATABASE_NAME, USE_CAPTION_FILTER, DELETE_CHANNEL
+from utils import temp
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +183,7 @@ async def _search(col, raw_query: str, regex, offset: int, limit: int, lang=None
         if lang: text_flt = {"$and": [text_flt, {"file_name": re.compile(lang, re.IGNORECASE)}]}
 
         cursor = col.find(text_flt, {"_id": 1, "file_name": 1, "file_size": 1, "file_type": 1, "file_ref": 1, "caption": 1, "thumb_url": 1, "score": {"$meta": "textScore"}})
-        cursor.sort([("score", {"$meta": "textScore"}), ("_id", -1)])
+        cursor.sort([("score", {"$meta": "textScore"})])
         cursor.skip(offset).limit(limit)
         docs = await cursor.to_list(length=limit)
         if docs:
@@ -212,7 +214,7 @@ async def get_count(col, flt, bypass):
 # ─────────────────────────────────────────────────────────
 # 🌐 PUBLIC SEARCH API (NEW UPGRADE: CROSS-COLLECTION MERGE)
 # ─────────────────────────────────────────────────────────
-async def get_search_results(query, max_results, offset=0, lang=None, collection_type="primary", bypass_count=False, cached_counts=None, counts_out=None):
+async def get_search_results(query, max_results, offset=0, lang=None, collection_type="primary", bypass_count=False):
     if not query: return [], "", 0, collection_type
     raw_query  = str(query).strip()
     regex      = _build_regex(raw_query)
@@ -240,19 +242,13 @@ async def get_search_results(query, max_results, offset=0, lang=None, collection
 
         if not flt: return [], "", 0, collection_type
 
-        # ⚡ FAST PAGINATION: अगर पिछली search से counts cache में मिल गए, तो दोबारा count_documents मत चलाओ
-        if cached_counts and all(k in cached_counts for k in ("cnt_p", "cnt_c", "cnt_a")):
-            cnt_p, cnt_c, cnt_a = cached_counts["cnt_p"], cached_counts["cnt_c"], cached_counts["cnt_a"]
-        else:
-            cnt_p, cnt_c, cnt_a = await asyncio.gather(
-                get_count(primary, flt, bypass_count),
-                get_count(cloud, flt, bypass_count),
-                get_count(archive, flt, bypass_count)
-            )
+        cnt_p, cnt_c, cnt_a = await asyncio.gather(
+            get_count(primary, flt, bypass_count),
+            get_count(cloud, flt, bypass_count),
+            get_count(archive, flt, bypass_count)
+        )
 
         total = cnt_p + cnt_c + cnt_a
-        if counts_out is not None:
-            counts_out["cnt_p"], counts_out["cnt_c"], counts_out["cnt_a"] = cnt_p, cnt_c, cnt_a
 
         sources = []
         if cnt_p > 0: sources.append("Primary")
@@ -278,7 +274,7 @@ async def get_search_results(query, max_results, offset=0, lang=None, collection
 
             cursor = col.find(flt, {"_id": 1, "file_name": 1, "file_size": 1, "file_type": 1, "file_ref": 1, "caption": 1, "thumb_url": 1})
             if is_text:
-                cursor = cursor.sort([("score", {"$meta": "textScore"}), ("_id", -1)])
+                cursor = cursor.sort([("score", {"$meta": "textScore"})])
             else:
                 cursor = cursor.sort('_id', -1)
 
@@ -295,14 +291,7 @@ async def get_search_results(query, max_results, offset=0, lang=None, collection
 
     else:
         col = COLLECTIONS.get(collection_type, primary)
-        # ⚡ FAST PAGINATION: cached total मिल गया तो सिर्फ docs fetch करो, count_documents skip करो
-        if cached_counts and "total" in cached_counts:
-            results, _ = await _search(col, raw_query, regex, offset, max_results, lang, bypass_count=True)
-            total = cached_counts["total"]
-        else:
-            results, total = await _search(col, raw_query, regex, offset, max_results, lang, bypass_count=bypass_count)
-            if counts_out is not None:
-                counts_out["total"] = total
+        results, total = await _search(col, raw_query, regex, offset, max_results, lang, bypass_count=bypass_count)
         actual_src = collection_type.capitalize()
         if not results: total = 0
 
@@ -317,29 +306,81 @@ async def get_search_results(query, max_results, offset=0, lang=None, collection
     return results, next_offset, total, actual_src
 
 # ─────────────────────────────────────────────────────────
-# 🗑 DELETE FILES 
+# 🗑 DELETE FILES  (✅ DELETE_CHANNEL बैकअप इंजन)
+# सिर्फ़ /delete (regex targeted delete) और web के /api/delete में डिलीट होने से
+# पहले फाइल DELETE_CHANNEL में फॉरवर्ड होती है। /delete_all (पूरा collection wipe)
+# में बैकअप जानबूझकर स्किप किया गया है।
 # ─────────────────────────────────────────────────────────
+async def _backup_before_delete(doc):
+    """किसी फाइल डॉक्युमेंट को डिलीट से पहले DELETE_CHANNEL में बैकअप भेजता है।
+    बैकअप फेल हो जाए तो भी डिलीट को नहीं रोकता — बस warning log करके आगे बढ़ता है
+    (ताकि Telegram flood/network दिक्कत की वजह से admin का delete operation अटके नहीं)।"""
+    if not DELETE_CHANNEL or not getattr(temp, "BOT", None):
+        return
+    file_ref = doc.get("file_ref")
+    if not file_ref:
+        return
+    caption = f"🗑 <b>Deleted File Backup</b>\n\n📄 <code>{doc.get('file_name', 'Unknown')}</code>"
+    for attempt in range(2):  # 1 असली कोशिश + 1 FloodWait के बाद रिट्राई
+        try:
+            await temp.BOT.send_cached_media(chat_id=DELETE_CHANNEL, file_id=file_ref, caption=caption)
+            return
+        except FloodWait as e:
+            await asyncio.sleep(e.value)
+        except Exception as e:
+            logger.warning(f"Delete-backup failed for {doc.get('_id')}: {e}")
+            return
+
+
 async def delete_files(query, collection_type="all"):
     deleted = 0
     try:
+        cols = [col for name, col in COLLECTIONS.items() if (collection_type == "all" or name == collection_type) and name != "actors"]
+
         if query == "*":
-            cols = [col for name, col in COLLECTIONS.items() if (collection_type == "all" or name == collection_type) and name != "actors"]
+            # ✅ /delete_all (पूरा collection wipe) — यहाँ DELETE_CHANNEL में बैकअप
+            # जानबूझकर नहीं भेजा जाता (हज़ारों फाइलें हो सकती हैं, flood/समय दोनों
+            # की समस्या होगी)। सिर्फ़ /delete (regex-आधारित) और web से backup होता है।
+            flt = {}
             for col in cols:
-                res = await col.delete_many({})
+                res = await col.delete_many(flt)
                 deleted += res.deleted_count
             return deleted
 
         regex = _build_regex(str(query))
         if not regex: return 0
-        flt   = {"file_name": regex}
-        cols  = [col for name, col in COLLECTIONS.items() if (collection_type == "all" or name == collection_type) and name != "actors"]
+        flt = {"file_name": regex}
+
         for col in cols:
+            # ✅ /delete (regex मैच वाला targeted delete) — DB से हटाने से पहले
+            # हर matching फाइल का बैकअप DELETE_CHANNEL में भेजा जाता है
+            async for doc in col.find(flt, {"_id": 1, "file_name": 1, "file_ref": 1}):
+                await _backup_before_delete(doc)
             res = await col.delete_many(flt)
             deleted += res.deleted_count
         return deleted
     except Exception as e:
         logger.error(f"delete_files error: {e}")
         return deleted
+
+
+async def delete_single_file(file_id, collection_type="primary"):
+    """एक फाइल को डिलीट करने से पहले DELETE_CHANNEL में बैकअप भेजता है, फिर DB से हटाता है।
+    web/search_api.py के /api/delete endpoint से इस्तेमाल होता है (delete_files की
+    तरह ही _backup_before_delete reuse करता है, दोबारा नहीं लिखा)।"""
+    try:
+        col = COLLECTIONS.get(collection_type)
+        if col is None:
+            return False
+        doc = await col.find_one({"_id": file_id}, {"_id": 1, "file_name": 1, "file_ref": 1})
+        if not doc:
+            return False
+        await _backup_before_delete(doc)
+        res = await col.delete_one({"_id": file_id})
+        return bool(res.deleted_count)
+    except Exception as e:
+        logger.error(f"delete_single_file error: {e}")
+        return False
 
 async def get_file_details(file_id):
     try:
