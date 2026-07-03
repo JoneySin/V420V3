@@ -96,7 +96,7 @@ async def get_spell_suggestion(query):
 # ─────────────────────────────────────────────
 # 🎨 UI HELPER FUNCTION (Minimalist Layout Lock)
 # ─────────────────────────────────────────────
-def get_filter_ui(search, files, total, act_src, offset, chat_id, req_id, key, next_off, simple_mode=True):
+def get_filter_ui(search, files, total, act_src, offset, chat_id, req_id, key, next_off, simple_mode=True, delay=300):
     list_items = [
         f"📁 <a href='https://t.me/{temp.U_NAME}?start=file_{chat_id}_{f['_id']}'>[{get_size(f['file_size'])}] {f['file_name']}</a>"
         for f in files
@@ -106,8 +106,13 @@ def get_filter_ui(search, files, total, act_src, offset, chat_id, req_id, key, n
     total_pages = math.ceil(total / MAX_BOT_RESULTS)
     curr_page = (int(offset) // MAX_BOT_RESULTS) + 1
     
-    cap = (f"<b>👑 Search: {search}\n🎬 Total: {total}\n📚 Source: {act_src.upper()}\n"
-           f"📄 Page: {curr_page}/{total_pages}</b>\n\n{files_text}")
+    delay_min = max(1, round(delay / 60))
+    
+    header_bq = (f"<blockquote>🎬 <b>Total:</b> {total}\n📚 <b>Source:</b> {act_src.upper()}\n"
+                 f"📄 <b>Page:</b> {curr_page}/{total_pages}</blockquote>")
+    footer_bq = f"<blockquote>⚠️ This message will delete in {delay_min}m.</blockquote>"
+    
+    cap = f"{header_bq}\n\n{files_text}\n\n{footer_bq}"
 
     btn = []
     
@@ -284,7 +289,7 @@ async def auto_filter(client, msg, collection_type="all", settings=None):
     temp.FILES[key] = files
     BUTTONS[key] = {"query": search, "counts": {collection_type: counts_out}}
 
-    cap, markup = get_filter_ui(search, files, total, act_src, 0, msg.chat.id, msg.from_user.id, key, next_offset, is_simple_mode)
+    cap, markup = get_filter_ui(search, files, total, act_src, 0, msg.chat.id, msg.from_user.id, key, next_offset, is_simple_mode, delay=300)
 
     try:
         res = await msg.reply(cap, reply_markup=markup, disable_web_page_preview=True, quote=True)
@@ -344,7 +349,7 @@ async def spell_check_handler(client, query):
         settings = await get_settings(query.message.chat.id)
         is_simple_mode = settings.get("simple_mode", True)
 
-        cap, markup = get_filter_ui(suggestion, files, total, act_src, 0, query.message.chat.id, query.from_user.id, key, next_offset, is_simple_mode)
+        cap, markup = get_filter_ui(suggestion, files, total, act_src, 0, query.message.chat.id, query.from_user.id, key, next_offset, is_simple_mode, delay=300)
         await query.message.edit_text(cap, reply_markup=markup, disable_web_page_preview=True)
         
         asyncio.create_task(start_auto_delete_timer(client, query.message.chat.id, query.message.id, delay=300))
@@ -395,7 +400,7 @@ async def pagination_handler(client, query):
     settings = await get_settings(query.message.chat.id)
     is_simple_mode = settings.get("simple_mode", True)
     
-    cap, markup = get_filter_ui(search, files, total, act_src, offset, query.message.chat.id, req, key, next_off, is_simple_mode)
+    cap, markup = get_filter_ui(search, files, total, act_src, offset, query.message.chat.id, req, key, next_off, is_simple_mode, delay=300)
 
     try: 
         await query.message.edit_text(cap, reply_markup=markup, disable_web_page_preview=True)
