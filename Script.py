@@ -2,21 +2,15 @@ class script(object):
 
     # 🍿 आपके लाइव फीचर्स और प्रीमियम मॉडल के अनुसार स्टार्ट टेक्स्ट (DM locked logic ready)
     START_TXT = """<blockquote><b><i>Hey {}, {}</i></b></blockquote>
-
 <blockquote><b><i>I am a powerful & smart auto filter bot! I can provide movies and series with direct stream & download links. 🚀</i></b></blockquote>
 
 🍿 <b><u>My Main Features:</u></b>
 
 <blockquote><b><i>Smart Auto Filter In Chat Groups</i></b></blockquote>
-
-<blockquote><b><i>📱 Advanced Mini App For Cinematic Search</i></b></blockquote>
-
-<blockquote><b><i>🎬 In-Built Player With 10s Double-Tap Skip</i></b></blockquote>
-
+<blockquote><b><i>📱 Advanced Mini App Cinematic Search</i></b></blockquote>
+<blockquote><b><i>🎬 In-Built Player With Double-Tap Skip</i></b></blockquote>
 <blockquote><b><i>⚡ Superfast Direct Download Links</i></b></blockquote>
-
 <blockquote><b><i>🛡️ Auto Delete Queue (Restart Proof)</i></b></blockquote>
-
 <blockquote><b><i>✨ Join Premium For Ads Free Experience</i></b></blockquote>"""
 
     # 📊 ✅ NEW PREMIUM UI: एकदम नया मॉडर्न लुक जिसमें Directory भी शामिल है (Admin Only)
