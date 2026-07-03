@@ -1,5 +1,6 @@
 import io
 import os
+import gc
 import re
 import json
 import time
@@ -295,7 +296,7 @@ async def api_search(req):
             poster_url = ""
         else:
             raw_thumb = d.get("thumb_url", "")
-            v_salt = hashlib.md5(raw_thumb.encode()).hexdigest()[:10] if raw_thumb.startswith("TG_ID:") else "0"
+            v_salt = raw_thumb[-8:] if (raw_thumb and raw_thumb.startswith("TG_ID:")) else "0"
             tg_thumb = f"/api/thumb?file_id={db_id}&col={source_collection_name}&v={v_salt}"
             poster_url = tg_thumb
 
@@ -337,26 +338,12 @@ async def get_telegram_thumb(req):
     fid = req.query.get("file_id")
     col_name = req.query.get("col", "primary").lower()
     is_retry = req.query.get("retry", "false").lower() == "true"
-    v_salt = req.query.get("v", "0")
     if not fid:
         return web.Response(status=400)
 
-    # ✅ FAST LOAD: URL में पहले से ही `v=v_salt` के जरिए content-version बना हुआ है
-    # (thumb re-upload होने पर v_salt बदल जाता है), इसलिए यह URL immutable माना जा
-    # सकता है — browser को बार-बार server से पूछने की जरूरत ही नहीं। पहले सिर्फ
-    # max-age=86400 था, यानी हर 24h बाद वही unchanged thumbnail फिर से fetch होती
-    # थी। अब 1 साल + immutable, साथ में ETag/304 पुराने cached clients के लिए fallback.
-    etag = f'"{col_name}-{fid}-{v_salt}"'
-    if req.headers.get("If-None-Match") == etag:
-        return web.Response(status=304, headers={
-            "Cache-Control": "public, max-age=31536000, immutable",
-            "ETag": etag,
-        })
-
     headers = {
         "Content-Disposition": 'inline; filename="poster.jpg"',
-        "Cache-Control": "public, max-age=31536000, immutable",
-        "ETag": etag,
+        "Cache-Control": "max-age=86400"
     }
 
     res = await _get_or_fetch_thumb(fid, col_name=col_name, is_retry=is_retry)
@@ -562,6 +549,28 @@ async def api_db_stats(req):
             "total": "512.0 MB",
             "percent": min(round(percent, 2), 100) 
         }, dumps=fast_json)
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500, dumps=fast_json)
+
+
+# ─────────────────────────────────────────────
+# 🧹 ADMIN: RAM CACHE FLUSH (stats.py के "Flush RAM Cache" बटन के लिए)
+# ✅ FIX: पहले यह बटन सिर्फ़ UI में setTimeout से "✅ Cleared!" दिखा देता था,
+# असल में कोई cache clear नहीं होता था। अब यहाँ पहले से मौजूद LRU caches
+# (thumb_cache, PREFETCH_CACHE, TRENDING_CACHE - जो api_edit_name/api_upload_thumb
+# में भी clear होते हैं) को ही दोबारा इस्तेमाल किया गया है, नया कैशे सिस्टम नहीं बनाया।
+# ─────────────────────────────────────────────
+@search_routes.post("/api/flush_cache")
+async def api_flush_cache(req):
+    role, _ = await get_user_role(req)
+    if role != "admin":
+        return web.json_response({"error": "Admin Authorization Required!"}, status=403, dumps=fast_json)
+    try:
+        thumb_cache.clear()
+        PREFETCH_CACHE.clear()
+        TRENDING_CACHE.clear()
+        gc.collect()
+        return web.json_response({"success": True}, dumps=fast_json)
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500, dumps=fast_json)
 
