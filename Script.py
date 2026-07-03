@@ -1,68 +1,72 @@
 class script(object):
 
     # 🍿 आपके लाइव फीचर्स और प्रीमियम मॉडल के अनुसार स्टार्ट टेक्स्ट (DM locked logic ready)
-    START_TXT = """<b>ʜᴇʏ {}, <i>{}</i>
-    
-ɪ ᴀᴍ ᴀ ᴘᴏᴡᴇʀғᴜʟ & ꜱᴍᴀʀᴛ ᴀᴜᴛᴏ ғɪʟᴛᴇʀ ʙᴏᴛ! ɪ ᴄᴀɴ ᴘʀᴏᴠɪᴅᴇ ᴍᴏᴠɪᴇꜱ ᴀɴᴅ ꜱᴇʀɪᴇꜱ ᴡɪᴛʜ ᴅɪʀᴇᴄᴛ ꜱᴛʀᴇᴀᴍ & ᴅᴏᴡɴʟᴏᴀᴅ ʟɪɴᴋꜱ. 🚀
+    START_TXT = """<blockquote><b><i>Hey {}, {}</i></b></blockquote>
 
-🍿 <u>ᴍʏ ᴍᴀɪɴ ғᴇᴀᴛᴜʀᴇꜱ:</u>
-• ꜱᴍᴀʀᴛ ᴀᴜᴛᴏ ғɪʟᴛᴇʀ ɪɴ ᴄʜᴀᴛ ɢʀᴏᴜᴘꜱ
-• 📱 ᴀᴅᴠᴀɴᴄᴇᴅ ᴍɪɴɪ ᴀᴘᴘ ꜰᴏʀ ᴄɪɴᴇᴍᴀᴛɪᴄ ꜱᴇᴀʀᴄʜ
-• 🎬 ɪɴ-ʙᴜɪʟᴛ ᴘʟᴀʏᴇʀ ᴡɪᴛʜ 10ꜱ ᴅᴏᴜʙʟᴇ-ᴛᴀᴘ ꜱᴋɪᴘ
-• ⚡ ꜱᴜᴘᴇʀғᴀꜱᴛ ᴅɪʀᴇᴄᴛ ᴅᴏᴡɴʟᴏᴀᴅ ʟɪɴᴋꜱ
-• 🧠 ɢᴇᴍɪɴɪ 2.5 ғʟᴀsʜ ᴀɪ ᴄʜᴀᴛ ᴀssɪsᴛᴀɴᴛ
-• 🛡️ ᴀᴜᴛᴏ-ᴅᴇʟᴇᴛᴇ ǫᴜᴇᴜᴇ (ʀᴇꜱᴛᴀʀᴛ-ᴘʀᴏᴏғ)
+<blockquote><b><i>I am a powerful & smart auto filter bot! I can provide movies and series with direct stream & download links. 🚀</i></b></blockquote>
 
-✨ <i>ᴊᴏɪɴ ᴏᴜʀ ᴘʀᴇᴍɪᴜᴍ ꜰᴏʀ ᴀɴ ᴀᴅ-ꜰʀᴇᴇ ᴇxᴘᴇʀɪᴇɴᴄᴇ!</i></b>"""
+🍿 <b><u>My Main Features:</u></b>
+
+<blockquote><b><i>Smart Auto Filter In Chat Groups</i></b></blockquote>
+
+<blockquote><b><i>📱 Advanced Mini App For Cinematic Search</i></b></blockquote>
+
+<blockquote><b><i>🎬 In-Built Player With 10s Double-Tap Skip</i></b></blockquote>
+
+<blockquote><b><i>⚡ Superfast Direct Download Links</i></b></blockquote>
+
+<blockquote><b><i>🛡️ Auto Delete Queue (Restart Proof)</i></b></blockquote>
+
+<blockquote><b><i>✨ Join Premium For Ads Free Experience</i></b></blockquote>"""
 
     # 📊 ✅ NEW PREMIUM UI: एकदम नया मॉडर्न लुक जिसमें Directory भी शामिल है (Admin Only)
-    STATUS_TXT = """<b>🤖 𝐅ᴀ𝐬ᴛ 𝐅ɪ𝐧𝐝ᴇʀ 𝐒ʏ𝐬ᴛᴇᴍ 𝐓ᴇʟᴇᴍᴇᴛʀʏ</b>
+    STATUS_TXT = """<b>🤖 Fast Finder System Telemetry</b>
 
-<b>👥 <u>ɴᴇᴛᴡᴏʀᴋ ᴅʏɴᴀᴍɪᴄs:</u></b>
-<blockquote><b>🤵 ᴜsᴇʀs:</b> <code>{}</code>
-<b>🏘️ ɢʀᴏᴜᴘs:</b> <code>{}</code>
-<b>💎 ᴘʀᴇᴍɪᴜᴍ:</b> <code>{}</code></blockquote>
+<b>👥 <u>Network Dynamics:</u></b>
+<blockquote><b>🤵 Users:</b> <code>{}</code>
+<b>🏘️ Groups:</b> <code>{}</code>
+<b>💎 Premium:</b> <code>{}</code></blockquote>
 
-<b>🗄️ <u>ᴅᴀᴛᴀ ᴄᴇɴᴛʀᴇ (ᴛᴏᴛᴀʟ: {}):</u></b>
-<blockquote><b>🟢 ᴘʀɪᴍᴀʀʏ:</b> <code>{}</code> (🖼️ <code>{}</code>)
-<b>🔵 ᴄʟᴏᴜᴅ:</b> <code>{}</code> (🖼️ <code>{}</code>)
-<b>🟠 ᴀʀᴄʜɪᴠᴇ:</b> <code>{}</code> (🖼️ <code>{}</code>)</blockquote>
+<b>🗄️ <u>Data Centre (Total: {}):</u></b>
+<blockquote><b>🟢 Primary:</b> <code>{}</code> (🖼️ <code>{}</code>)
+<b>🔵 Cloud:</b> <code>{}</code> (🖼️ <code>{}</code>)
+<b>🟠 Archive:</b> <code>{}</code> (🖼️ <code>{}</code>)</blockquote>
 
-<b>🗂️ <u>ᴜɴɪᴠᴇʀsᴀʟ ᴅɪʀᴇᴄᴛᴏʀʏ (ᴛᴏᴛᴀʟ: {}):</u></b>
-<blockquote><b>🎭 ᴀᴄᴛᴏʀs:</b> <code>{}</code>
-<b>📱 ᴀᴘᴘs:</b> <code>{}</code>
-<b>🌐 ᴡᴇʙsɪᴛᴇs:</b> <code>{}</code></blockquote>
+<b>🗂️ <u>Universal Directory (Total: {}):</u></b>
+<blockquote><b>🎭 Actors:</b> <code>{}</code>
+<b>📱 Apps:</b> <code>{}</code>
+<b>🌐 Websites:</b> <code>{}</code></blockquote>
 
-<b>⚙️ <u>ᴇɴɢɪɴᴇ ᴍᴇᴛʀɪᴄs:</u></b>
-<blockquote><b>🖼️ ɢʟᴏʙᴀʟ ᴛʜᴜᴍʙs:</b> <code>{}</code>
-<b>⏱️ ᴜᴘᴛɪᴍᴇ:</b> <code>{}</code></blockquote>"""
+<b>⚙️ <u>Engine Metrics:</u></b>
+<blockquote><b>🖼️ Global Thumbs:</b> <code>{}</code>
+<b>⏱️ Uptime:</b> <code>{}</code></blockquote>"""
 
     # ✅ सिर्फ प्रीमियम/नॉर्मल यूज़र्स के लिए ग्लोबल लाइब्रेरी स्टैट्स
-    USER_STATUS_TXT = """<b>📊 𝐅ᴀ𝐬ᴛ 𝐅ɪ𝐧𝐝ᴇʀ 𝐆ʟᴏʙᴀʟ 𝐋ɪʙʀᴀʀʏ</b>
+    USER_STATUS_TXT = """<b>📊 Fast Finder Global Library</b>
 
-<b>🗄️ <u>ᴄᴏɴᴛᴇɴᴛ ᴠᴀᴜʟᴛ:</u></b>
-<blockquote><b>🚀 ᴛᴏᴛᴀʟ ᴛɪᴛʟᴇs:</b> <code>{}</code>
-<b>🟢 ᴘʀɪᴍᴀʀʏ:</b> <code>{}</code>
-<b>🔵 ᴄʟᴏᴜᴅ:</b> <code>{}</code>
-<b>🟠 ᴀʀᴄʜɪᴠᴇ:</b> <code>{}</code></blockquote>
+<b>🗄️ <u>Content Vault:</u></b>
+<blockquote><b>🚀 Total Titles:</b> <code>{}</code>
+<b>🟢 Primary:</b> <code>{}</code>
+<b>🔵 Cloud:</b> <code>{}</code>
+<b>🟠 Archive:</b> <code>{}</code></blockquote>
 
-<b>🗂️ <u>ᴜɴɪᴠᴇʀsᴀʟ ᴅɪʀᴇᴄᴛᴏʀʏ:</u></b>
-<blockquote><b>🌟 ᴛᴏᴛᴀʟ ᴘʀᴏғɪʟᴇs:</b> <code>{}</code>
-<b>🎭 ᴀᴄᴛᴏʀs:</b> <code>{}</code>
-<b>📱 ᴀᴘᴘs:</b> <code>{}</code>
-<b>🌐 ᴡᴇʙsɪᴛᴇs:</b> <code>{}</code></blockquote>
+<b>🗂️ <u>Universal Directory:</u></b>
+<blockquote><b>🌟 Total Profiles:</b> <code>{}</code>
+<b>🎭 Actors:</b> <code>{}</code>
+<b>📱 Apps:</b> <code>{}</code>
+<b>🌐 Websites:</b> <code>{}</code></blockquote>
 
-<b>⏱️ sʏsᴛᴇᴍ ʀᴜɴɴɪɴɢ sɪɴᴄᴇ:</b> <code>{}</code>"""
+<b>⏱️ System Running Since:</b> <code>{}</code>"""
 
     NEW_GROUP_TXT = """<b>#NewGroup 👥\n\n• Title: {}\n• ID: <code>{}</code>\n• Username: {}\n• Total Members: <code>{}</code></b>"""
 
     NEW_USER_TXT = """<b>#NewUser 👤\n\n• Name: {}\n• ID: <code>{}</code></b>"""
 
-    NOT_FILE_TXT = """<b>❌ ʜᴇʏ {}, "{}" ɪꜱ ɴᴏᴛ ꜰᴏᴜɴᴅ ɪɴ ᴍʏ ᴅᴀᴛᴀʙᴀꜱᴇ. 
+    NOT_FILE_TXT = """<b>❌ Hey {}, "{}" is not found in my database. 
 
-💡 <u>ᴘʟᴇᴀꜱᴇ ᴄʜᴇᴄᴋ:</u>
-» sᴘᴇʟʟɪɴɢ sʜᴏᴜʟᴅ ʙᴇ ᴄᴏʀʀᴇᴄᴛ (ᴄʜᴇᴄᴋ ɢᴏᴏɢʟᴇ)
-» sᴇᴀʀᴄʜ ᴡɪᴛʜ ᴍᴏᴠɪᴇ ɴᴀᴍᴇ ᴏɴʟʏ ( things like 4k, Bluray, Season, Year हटा दें)</b>"""
+💡 <u>Please Check:</u>
+» Spelling should be correct (check Google)
+» Search with movie name only ( things like 4k, Bluray, Season, Year हटा दें)</b>"""
 
     FILE_CAPTION = """<b>{file_name}</b>"""
 
