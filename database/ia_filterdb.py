@@ -214,7 +214,7 @@ async def get_count(col, flt, bypass):
 # ─────────────────────────────────────────────────────────
 # 🌐 PUBLIC SEARCH API (NEW UPGRADE: CROSS-COLLECTION MERGE)
 # ─────────────────────────────────────────────────────────
-async def get_search_results(query, max_results, offset=0, lang=None, collection_type="primary", bypass_count=False):
+async def get_search_results(query, max_results, offset=0, lang=None, collection_type="primary", bypass_count=False, cached_counts=None, counts_out=None):
     if not query: return [], "", 0, collection_type
     raw_query  = str(query).strip()
     regex      = _build_regex(raw_query)
@@ -242,11 +242,23 @@ async def get_search_results(query, max_results, offset=0, lang=None, collection
 
         if not flt: return [], "", 0, collection_type
 
-        cnt_p, cnt_c, cnt_a = await asyncio.gather(
-            get_count(primary, flt, bypass_count),
-            get_count(cloud, flt, bypass_count),
-            get_count(archive, flt, bypass_count)
-        )
+        # ✅ FIX: filter.py (bot साइड) पहले से computed counts (cached_counts) भेजता है
+        # ताकि सिर्फ़ page बदलने पर तीनों collections को दोबारा count_documents ना
+        # करना पड़े (fast pagination)। bypass_count यहाँ हमेशा False रहता है (bot
+        # हमेशा असली गिनती चाहता है, web अलग से bypass_count=True भेजता है)।
+        if cached_counts and all(k in cached_counts for k in ("primary", "cloud", "archive")):
+            cnt_p, cnt_c, cnt_a = cached_counts["primary"], cached_counts["cloud"], cached_counts["archive"]
+        else:
+            cnt_p, cnt_c, cnt_a = await asyncio.gather(
+                get_count(primary, flt, bypass_count),
+                get_count(cloud, flt, bypass_count),
+                get_count(archive, flt, bypass_count)
+            )
+
+        # ✅ FIX: caller (bot) को असली breakdown counts वापस दो ताकि UI में दिखा सके
+        # और अगली बार cached_counts के तौर पर वापस भेज सके
+        if counts_out is not None:
+            counts_out["primary"], counts_out["cloud"], counts_out["archive"] = cnt_p, cnt_c, cnt_a
 
         total = cnt_p + cnt_c + cnt_a
 
@@ -294,6 +306,9 @@ async def get_search_results(query, max_results, offset=0, lang=None, collection
         results, total = await _search(col, raw_query, regex, offset, max_results, lang, bypass_count=bypass_count)
         actual_src = collection_type.capitalize()
         if not results: total = 0
+        # ✅ FIX: single-collection टैब (primary/cloud/archive) के लिए भी counts_out भरो
+        if counts_out is not None:
+            counts_out[collection_type] = total
 
     if bypass_count:
         has_more = len(results) == max_results
