@@ -176,13 +176,29 @@ def get_wish():
     return "ɢᴏᴏᴅ ᴍᴏʀɴɪɴɢ 🌞" if h < 12 else "ɢᴏᴏᴅ ᴀꜰᴛᴇʀɴᴏᴏɴ 🌗" if h < 18 else "ɢᴏᴏᴅ ᴇᴠᴇɴɪɴɢ 🌘"
 
 async def get_seconds(time_string):
-    match = re.match(r"(\d+)(s|min|hour|day|month|year)", time_string)
-    if not match: 
+    # ✅ BUG FIX: पहले सिर्फ़ पूरे शब्द (min/hour/day) ही मान्य थे, आम shorthand
+    # जैसे "1m"/"1h"/"1d" (जो admins आमतौर पर टाइप करते हैं, और जो खुद
+    # get_readable_time() भी आउटपुट में इस्तेमाल करता है) रेगेक्स से मैच ही नहीं
+    # होते थे — चुपचाप 0 return होता, जिससे "5m" वाला default delay लग जाता और
+    # keyword में गलती से यूज़र का दिया समय (जैसे "1m") जुड़ जाता।
+    # ⚠️ ऑर्डर ज़रूरी है: लंबे शब्द ("month","hour") पहले लिखे हैं ताकि रेगेक्स
+    # उन्हें छोटे prefix ("m","h") के तौर पर गलती से आधा-अधूरा मैच न कर ले।
+    match = re.match(
+        r"(\d+)\s*(month|min|mo|m|hour|hr|h|day|d|year|y|sec|s)",
+        time_string.strip(),
+        re.IGNORECASE
+    )
+    if not match:
         return 0
+    unit = match.group(2).lower()
     return int(match.group(1)) * {
-        "s": 1, "min": 60, "hour": 3600, "day": 86400,
-        "month": 2592000, "year": 31536000
-    }.get(match.group(2), 0)
+        "s": 1, "sec": 1,
+        "m": 60, "min": 60,
+        "h": 3600, "hr": 3600, "hour": 3600,
+        "d": 86400, "day": 86400,
+        "mo": 2592000, "month": 2592000,
+        "y": 31536000, "year": 31536000,
+    }.get(unit, 0)
 
 # 🛠️ PREMIUM LIFECYCLE TIME PARSERS
 def parse_expire_time(e):
