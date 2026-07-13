@@ -13,19 +13,32 @@
 #        🔁 Migrate → copies the whole DB + shows a "now update env var" message
 #   5. After tapping a button (or picking a collection), reply with the
 #      destination MongoDB URI — optionally followed by a DB_NAME
-#   6. Copy runs with a live progress bar
-#   7. Once done, delete the message that contains the password
-#   8. Remove this file from /plugins/ and restart the bot when finished
+#   6. If the destination collection already has documents, bot asks:
+#        ▶️ Resume   → only copies documents newer than what's already there
+#        ♻️ Replace  → drops the destination collection, then copies fresh
+#        ⏭️ Skip     → leaves that collection untouched, moves to the next one
+#        ❌ Cancel   → stops the whole operation
+#   7. Copy runs with a live progress bar
+#   8. Once done, delete the message that contains the password
+#   9. Remove this file from /plugins/ and restart the bot when finished
+#
+# Notes on resume: if the bot restarts mid-copy, in-memory state is lost, so
+# you'll need to re-run /check_db and pick the collection/DB again. But when
+# you do, the destination-already-has-data check + "Resume" option means only
+# the missing documents (by _id) get copied — it won't rescan or redo the
+# part that's already there.
 
 import asyncio
 import time
 import motor.motor_asyncio
+from pymongo.errors import BulkWriteError
 from hydrogram import Client, filters
 from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from info import ADMINS, DATABASE_URL, DATABASE_NAME
 
 BATCH_SIZE = 500
 STATUS_EDIT_INTERVAL = 4  # seconds between progress message edits
+DECISION_TIMEOUT = 300  # seconds to wait for existing-collection decision
 
 # user_id -> {"action": "copy_db"/"copy_collection"/"migrate", "collection": str|None}
 PENDING = {}
@@ -33,6 +46,8 @@ PENDING = {}
 CHOOSING_COLLECTION = {}
 # user_id -> {"url": str, "db_name": str}  — the DB last checked via /check_db
 SOURCE = {}
+# user_id -> asyncio.Future  — waiting on a resume/replace/skip/cancel decision
+DECISION_FUTURES = {}
 
 
 def _size_fmt(num_bytes):
@@ -160,11 +175,59 @@ async def collection_selected(bot, cq):
     await cq.answer()
 
 
+@Client.on_callback_query(filters.user(ADMINS) & filters.regex(r"^existwarn:"))
+async def existing_collection_decision(bot, cq):
+    action = cq.data.split(":", 1)[1]  # resume / replace / skip / cancel
+    fut = DECISION_FUTURES.get(cq.from_user.id)
+    if fut and not fut.done():
+        fut.set_result(action)
+    label = {"resume": "▶️ Resume", "replace": "♻️ Replace", "skip": "⏭️ Skip", "cancel": "❌ Cancel"}[action]
+    await cq.message.edit(f"Chosen: {label}")
+    await cq.answer()
+
+
 @Client.on_message(filters.private & filters.user(ADMINS) & filters.command("cancel"))
 async def cancel_pending(bot, message):
     had = PENDING.pop(message.from_user.id, None) or CHOOSING_COLLECTION.pop(message.from_user.id, None)
+    fut = DECISION_FUTURES.get(message.from_user.id)
+    if fut and not fut.done():
+        fut.set_result("cancel")
+        had = True
     if had:
         await message.reply("❌ Cancelled.")
+
+
+async def _ask_existing_collection_decision(bot, chat_id, user_id, col_name, dest_count):
+    """Shows Resume/Replace/Skip/Cancel buttons and waits for the admin's choice."""
+    fut = asyncio.get_event_loop().create_future()
+    DECISION_FUTURES[user_id] = fut
+
+    buttons = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("▶️ Resume", callback_data="existwarn:resume"),
+            InlineKeyboardButton("♻️ Replace", callback_data="existwarn:replace"),
+        ],
+        [
+            InlineKeyboardButton("⏭️ Skip", callback_data="existwarn:skip"),
+            InlineKeyboardButton("❌ Cancel", callback_data="existwarn:cancel"),
+        ],
+    ])
+    await bot.send_message(
+        chat_id,
+        f"⚠️ Destination collection '{col_name}' already contains {dest_count:,} docs.\n\n"
+        f"▶️ Resume — copy only what's missing\n"
+        f"♻️ Replace — drop it and copy fresh\n"
+        f"⏭️ Skip — leave it untouched, move on\n"
+        f"❌ Cancel — stop the whole operation",
+        reply_markup=buttons,
+    )
+
+    try:
+        return await asyncio.wait_for(fut, timeout=DECISION_TIMEOUT)
+    except asyncio.TimeoutError:
+        return "skip"
+    finally:
+        DECISION_FUTURES.pop(user_id, None)
 
 
 @Client.on_message(
@@ -217,19 +280,48 @@ async def receive_new_url(bot, message):
         collections_to_copy = all_collections
 
     grand_total = 0
+    grand_failed = 0
     last_edit = time.time()
 
     for col_name in collections_to_copy:
         old_col = old_db[col_name]
         new_col = new_db[col_name]
-        total = await old_col.estimated_document_count()
-        copied, batch = 0, []
 
-        # larger cursor batch_size = fewer round-trips to the source DB
-        async for doc in old_col.find({}, batch_size=BATCH_SIZE):
+        # --- existing-collection check ---
+        query = {}
+        dest_count = await new_col.count_documents({})
+        if dest_count > 0:
+            decision = await _ask_existing_collection_decision(
+                bot, message.chat.id, message.from_user.id, col_name, dest_count
+            )
+            if decision == "cancel":
+                old_client.close()
+                new_client.close()
+                return await status.edit("❌ Operation cancelled.")
+            elif decision == "skip":
+                continue
+            elif decision == "replace":
+                await new_col.drop()
+                query = {}
+            else:  # resume
+                last_doc = await new_col.find_one({}, sort=[("_id", -1)])
+                if last_doc:
+                    query = {"_id": {"$gt": last_doc["_id"]}}
+
+        total = await old_col.count_documents(query)
+        if total == 0:
+            continue  # nothing left to copy for this collection
+
+        copied, failed, batch = 0, 0, []
+
+        # sort by _id so resume (query on _id) always picks up where it left off
+        cursor = old_col.find(query, batch_size=BATCH_SIZE).sort("_id", 1)
+        async for doc in cursor:
             batch.append(doc)
             if len(batch) >= BATCH_SIZE:
-                copied += await _insert_batch(new_col, batch)
+                ins, err = await _insert_batch(new_col, batch)
+                copied += ins
+                failed += err
                 batch = []
                 if time.time() - last_edit > STATUS_EDIT_INTERVAL:
                     last_edit = time.time()
@@ -243,7 +335,9 @@ async def receive_new_url(bot, message):
                         pass
 
         if batch:
-            copied += await _insert_batch(new_col, batch)
+            ins, err = await _insert_batch(new_col, batch)
+            copied += ins
+            failed += err
 
         # copy non-default indexes so the new collection performs the same
         try:
@@ -258,6 +352,7 @@ async def receive_new_url(bot, message):
             pass  # index copy is best-effort, never block the data copy
 
         grand_total += copied
+        grand_failed += failed
         try:
             await status.edit(
                 f"✅ {col_name} done: {copied}/{total}\n{_progress_bar(copied, total)}\n\n"
@@ -269,11 +364,14 @@ async def receive_new_url(bot, message):
     old_client.close()
     new_client.close()
 
+    failed_note = f"\n⚠️ {grand_failed} documents failed to copy (real errors, not just duplicates).\n" if grand_failed else ""
+
     if action == "migrate":
         final_text = (
             f"🎉 Migration complete!\n\n"
             f"📦 Collections: {len(collections_to_copy)}\n"
-            f"📄 Documents copied: {grand_total}\n\n"
+            f"📄 Documents copied: {grand_total}\n"
+            f"{failed_note}\n"
             f"👉 Now update DATABASE_URL in Koyeb to the new URI and restart the bot.\n"
             f"⚠️ Then delete this message and remove this file from plugins."
         )
@@ -281,7 +379,8 @@ async def receive_new_url(bot, message):
         final_text = (
             f"🎉 Collection copy complete!\n\n"
             f"📁 Collection: {target_collection}\n"
-            f"📄 Documents copied: {grand_total}\n\n"
+            f"📄 Documents copied: {grand_total}\n"
+            f"{failed_note}\n"
             f"ℹ️ The original DB is untouched, nothing else to change.\n"
             f"⚠️ Delete this message (it contains a password)."
         )
@@ -289,7 +388,8 @@ async def receive_new_url(bot, message):
         final_text = (
             f"🎉 Database copy complete!\n\n"
             f"📦 Collections: {len(collections_to_copy)}\n"
-            f"📄 Documents copied: {grand_total}\n\n"
+            f"📄 Documents copied: {grand_total}\n"
+            f"{failed_note}\n"
             f"ℹ️ The original DB is untouched, nothing else to change.\n"
             f"The new DB is just a ready backup/copy.\n"
             f"⚠️ Delete this message (it contains a password)."
@@ -299,9 +399,25 @@ async def receive_new_url(bot, message):
 
 
 async def _insert_batch(new_col, batch):
-    """ordered=False so a duplicate _id (e.g. on re-run) doesn't fail the whole batch"""
+    """
+    Returns (inserted_count, real_failed_count).
+    ordered=False so one bad doc doesn't block the rest of the batch.
+    Duplicate-key errors (code 11000, e.g. re-running a copy) are NOT counted
+    as real failures — they just mean that doc was already there. Any other
+    write error (validation, disk full, etc.) IS counted as a real failure,
+    instead of the old behaviour of silently reporting the whole batch as
+    "copied" when the entire insert_many call raised.
+    """
     try:
         res = await new_col.insert_many(batch, ordered=False)
-        return len(res.inserted_ids)
+        return len(res.inserted_ids), 0
+    except BulkWriteError as e:
+        write_errors = e.details.get("writeErrors", [])
+        dup_errors = sum(1 for we in write_errors if we.get("code") == 11000)
+        real_errors = len(write_errors) - dup_errors
+        inserted = len(batch) - len(write_errors)
+        return inserted, real_errors
     except Exception:
-        return len(batch)
+        # total failure (auth error, network drop, disk full, etc.) — don't
+        # pretend this batch succeeded
+        return 0, len(batch)
