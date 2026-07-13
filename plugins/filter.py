@@ -82,15 +82,23 @@ async def get_http_session():
 async def get_spell_suggestion(query):
     try:
         session = await get_http_session()
-        url = f"http://suggestqueries.google.com/complete/search?client=firefox&q={query} movie"
-        async with session.get(url) as resp:
-            data = await resp.json()
+        # ✅ FIX: query को ठीक से URL-encode किया — पहले raw string (spaces/Hindi
+        # characters सहित) सीधे URL में डाला जा रहा था, जो multi-word/Hindi movie
+        # नामों पर request को तोड़ देता था।
+        params = {"client": "firefox", "q": f"{query} movie"}
+        async with session.get("http://suggestqueries.google.com/complete/search", params=params) as resp:
+            # ✅ FIX: Google का यह endpoint Content-Type: application/json नहीं
+            # भेजता (application/x-suggestions+json जैसा कुछ भेजता है) — aiohttp
+            # का resp.json() डिफ़ॉल्ट में इसे ContentTypeError मानकर फेंक देता था,
+            # जो नीचे के bare except में चुपचाप निगल लिया जाता था। content_type=None
+            # से यह strict चेक बंद हो जाता है।
+            data = await resp.json(content_type=None)
             if data and len(data) > 1 and data[1]:
                 suggestion = data[1][0].replace(" movie", "").replace(" series", "").strip()
                 if suggestion.lower() != query.lower():
                     return suggestion.title()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Spell suggestion fetch failed: {e}")
     return None
 
 # ─────────────────────────────────────────────
@@ -268,7 +276,11 @@ async def auto_filter(client, msg, collection_type="all", settings=None):
     is_simple_mode = settings.get("simple_mode", True)
 
     if not files:
-        if SPELL_CHECK:
+        # ✅ FIX: पहले सिर्फ़ global SPELL_CHECK env flag चेक होता था, group का अपना
+        # "Spell Check ON/OFF" टॉगल (settings में save तो होता था, पढ़ा कभी नहीं जाता
+        # था) पूरी तरह अनदेखा हो जाता था। अब global flag एक master kill-switch है,
+        # और उसके अंदर per-group setting असल में मायने रखती है।
+        if SPELL_CHECK and settings.get("spell_check", True):
             suggestion = await get_spell_suggestion(search)
             if suggestion:
                 btn = [[InlineKeyboardButton(f"✅ Yes, search '{suggestion}'", callback_data=f"spellchk_{msg.from_user.id}_{suggestion}")]]
