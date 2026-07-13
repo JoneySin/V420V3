@@ -1,24 +1,23 @@
-# ⚠️⚠️⚠️ TEMPORARY FILE — सिर्फ़ एक बार Migration/Copy के लिए ⚠️⚠️⚠️
-# इस्तेमाल:
-#   1. इसे /plugins/ फोल्डर में डालें, बॉट restart करें
-#   2. बॉट को PM में भेजें:
+# ⚠️⚠️⚠️ TEMPORARY FILE — use only once for DB Copy/Migration ⚠️⚠️⚠️
+# Usage:
+#   1. Drop this into your /plugins/ folder and restart the bot
+#   2. Send in PM:
 #        /check_db MONGO_URL [DB_NAME]
-#      उदाहरण:
+#      Example:
 #        /check_db mongodb+srv://user:pass@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
-#      (URL ना दें तो अपने आप DATABASE_URL/DATABASE_NAME (info.py) वाला इस्तेमाल होगा)
-#   3. बॉट उसी DB का connection status, collections, documents,
-#      storage, index size, database size दिखाएगा
-#   4. फिर 3 बटन देगा:
-#        📋 Copy Database   → पूरा DB नए URI में कॉपी होगा
-#        📂 Copy Collection → सिर्फ़ चुनी हुई collection कॉपी होगी
-#        🔄 Migrate         → पूरा DB कॉपी होगा + migrate वाला final message
-#   5. बटन दबाने के बाद (Copy Collection में पहले collection चुनें) नया
-#      MongoDB URI रिप्लाई करें — चाहें तो साथ में DB_NAME भी दे सकते हैं
-#      (स्पेस से अलग करके)
-#   6. Progress bar के साथ कॉपी होगी
-#   7. काम पूरा होने पर पासवर्ड वाला मैसेज Delete करें
-#   8. इस्तेमाल के बाद यह फाइल /plugins/ से हटा दें और बॉट restart करें
+#      (Skip the URL to use the default DATABASE_URL/DATABASE_NAME from info.py)
+#   3. Bot shows connection status, collections, document counts and storage size
+#   4. Then shows 3 buttons:
+#        📦 Copy    → copies the whole DB to a new URI
+#        📁 Select  → pick one collection to copy
+#        🔁 Migrate → copies the whole DB + shows a "now update env var" message
+#   5. After tapping a button (or picking a collection), reply with the
+#      destination MongoDB URI — optionally followed by a DB_NAME
+#   6. Copy runs with a live progress bar
+#   7. Once done, delete the message that contains the password
+#   8. Remove this file from /plugins/ and restart the bot when finished
 
+import asyncio
 import time
 import motor.motor_asyncio
 from hydrogram import Client, filters
@@ -26,12 +25,13 @@ from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from info import ADMINS, DATABASE_URL, DATABASE_NAME
 
 BATCH_SIZE = 500
+STATUS_EDIT_INTERVAL = 4  # seconds between progress message edits
 
 # user_id -> {"action": "copy_db"/"copy_collection"/"migrate", "collection": str|None}
 PENDING = {}
-# user_id -> True  (जब collection चुनने का स्टेप चल रहा हो)
+# user_id -> True  (while the collection-picker step is active)
 CHOOSING_COLLECTION = {}
-# user_id -> {"url": str, "db_name": str}  — जो DB /check_db में चेक किया गया था
+# user_id -> {"url": str, "db_name": str}  — the DB last checked via /check_db
 SOURCE = {}
 
 
@@ -44,18 +44,14 @@ def _size_fmt(num_bytes):
 
 
 def _progress_bar(done, total, width=12):
-    if total <= 0:
-        pct = 0
-    else:
-        pct = min(100, int(done * 100 / total))
+    pct = 0 if total <= 0 else min(100, int(done * 100 / total))
     filled = int(width * pct / 100)
-    bar = "▓" * filled + "░" * (width - filled)
-    return f"{bar} {pct}%"
+    return "▓" * filled + "░" * (width - filled) + f" {pct}%"
 
 
 @Client.on_message(filters.private & filters.user(ADMINS) & filters.command("check_db"))
 async def check_db_cmd(bot, message):
-    # /check_db [MONGO_URL] [DB_NAME] — URL ना दें तो info.py वाला default इस्तेमाल होगा
+    # /check_db [MONGO_URL] [DB_NAME] — no URL given -> use info.py default
     if len(message.command) > 1:
         check_url = message.command[1]
         check_db_name = message.command[2] if len(message.command) > 2 else DATABASE_NAME
@@ -64,27 +60,27 @@ async def check_db_cmd(bot, message):
         check_db_name = DATABASE_NAME
 
     SOURCE[message.from_user.id] = {"url": check_url, "db_name": check_db_name}
-
-    status = await message.reply("🔎 <b>DB की जानकारी निकाली जा रही है...</b>")
+    status = await message.reply("🔎 Checking DB info...")
 
     try:
         old_client = motor.motor_asyncio.AsyncIOMotorClient(check_url)
         old_db = old_client[check_db_name]
         await old_client.admin.command("ping")
     except Exception as e:
-        return await status.edit(f"❌ <b>DB से कनेक्ट नहीं हो पाया (Auth/Network Error):</b>\n<code>{e}</code>")
+        return await status.edit(f"❌ Could not connect (Auth/Network Error):\n{e}")
 
     try:
         collections = await old_db.list_collection_names()
+
+        # count all collections concurrently instead of one-by-one
+        counts = await asyncio.gather(
+            *(old_db[c].estimated_document_count() for c in collections)
+        )
         db_stats = await old_db.command("dbStats")
         storage_used = _size_fmt(db_stats.get("storageSize", 0))
+        old_client.close()
 
-        col_lines = []
-        total_docs = 0
-        for col_name in collections:
-            count = await old_db[col_name].count_documents({})
-            total_docs += count
-            col_lines.append(f"📁 {col_name}\n    Docs : {count:,}")
+        col_lines = [f"📁 {c}\n    Docs : {n:,}" for c, n in zip(collections, counts)]
 
         text = (
             f"✅ MongoDB Connected\n\n"
@@ -95,14 +91,16 @@ async def check_db_cmd(bot, message):
         )
 
         buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📦 Copy Database", callback_data="dbop:copy_db")],
-            [InlineKeyboardButton("📁 Select Collections", callback_data="dbop:copy_collection")],
-            [InlineKeyboardButton("🔁 Migrate", callback_data="dbop:migrate")],
+            [
+                InlineKeyboardButton("📦 Copy", callback_data="dbop:copy_db"),
+                InlineKeyboardButton("📁 Select", callback_data="dbop:copy_collection"),
+                InlineKeyboardButton("🔁 Migrate", callback_data="dbop:migrate"),
+            ],
             [InlineKeyboardButton("❌ Cancel", callback_data="dbop:cancel")],
         ])
         await status.edit(text, reply_markup=buttons)
     except Exception as e:
-        await status.edit(f"❌ DB जानकारी निकालने में गलती:\n{e}")
+        await status.edit(f"❌ Failed to fetch DB info:\n{e}")
 
 
 @Client.on_callback_query(filters.user(ADMINS) & filters.regex(r"^dbop:"))
@@ -112,7 +110,7 @@ async def dbop_callback(bot, cq):
     if action == "cancel":
         PENDING.pop(cq.from_user.id, None)
         CHOOSING_COLLECTION.pop(cq.from_user.id, None)
-        return await cq.message.edit("❌ Cancel कर दिया गया।")
+        return await cq.message.edit("❌ Cancelled.")
 
     if action == "copy_collection":
         src = SOURCE.get(cq.from_user.id, {"url": DATABASE_URL, "db_name": DATABASE_NAME})
@@ -122,26 +120,26 @@ async def dbop_callback(bot, cq):
             collections = await old_db.list_collection_names()
             old_client.close()
         except Exception as e:
-            return await cq.message.edit(f"❌ <b>Collections लोड नहीं हो पाईं:</b>\n<code>{e}</code>")
+            return await cq.message.edit(f"❌ Could not load collections:\n{e}")
 
         if not collections:
-            return await cq.message.edit("❌ कोई collection नहीं मिली।")
+            return await cq.message.edit("❌ No collections found.")
 
         rows = [[InlineKeyboardButton(c, callback_data=f"colsel:{c}")] for c in collections]
         rows.append([InlineKeyboardButton("❌ Cancel", callback_data="dbop:cancel")])
         CHOOSING_COLLECTION[cq.from_user.id] = True
-        await cq.message.edit("📂 <b>किस collection की copy बनानी है?</b>", reply_markup=InlineKeyboardMarkup(rows))
+        await cq.message.edit("📁 Which collection do you want to copy?", reply_markup=InlineKeyboardMarkup(rows))
         return await cq.answer()
 
-    # copy_db या migrate
+    # copy_db or migrate
     PENDING[cq.from_user.id] = {"action": action, "collection": None}
-    label = "पूरे DB की Copy" if action == "copy_db" else "Migrate"
+    label = "Full DB Copy" if action == "copy_db" else "Migrate"
     await cq.message.edit(
-        f"✏️ <b>{label} के लिए नया MongoDB URI भेजें</b> (इसी चैट में रिप्लाई करें):\n\n"
-        f"<code>mongodb+srv://user:pass@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority</code>\n\n"
-        f"चाहें तो साथ में DB_NAME भी दे सकते हैं, स्पेस से अलग करके:\n"
-        f"<code>mongodb+srv://... mydbname</code>\n\n"
-        f"रद्द करने के लिए <code>/cancel</code> भेजें।"
+        f"✏️ Send the new MongoDB URI for {label} (reply in this chat):\n\n"
+        f"mongodb+srv://user:pass@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority\n\n"
+        f"Optionally add a DB_NAME after it, separated by a space:\n"
+        f"mongodb+srv://... mydbname\n\n"
+        f"Send /cancel to abort."
     )
     await cq.answer()
 
@@ -153,11 +151,11 @@ async def collection_selected(bot, cq):
     PENDING[cq.from_user.id] = {"action": "copy_collection", "collection": col_name}
 
     await cq.message.edit(
-        f"✏️ <b>collection <code>{col_name}</code> की Copy के लिए नया MongoDB URI भेजें</b>:\n\n"
-        f"<code>mongodb+srv://user:pass@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority</code>\n\n"
-        f"चाहें तो साथ में DB_NAME भी दे सकते हैं, स्पेस से अलग करके:\n"
-        f"<code>mongodb+srv://... mydbname</code>\n\n"
-        f"रद्द करने के लिए <code>/cancel</code> भेजें।"
+        f"✏️ Send the new MongoDB URI to copy collection '{col_name}':\n\n"
+        f"mongodb+srv://user:pass@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority\n\n"
+        f"Optionally add a DB_NAME after it, separated by a space:\n"
+        f"mongodb+srv://... mydbname\n\n"
+        f"Send /cancel to abort."
     )
     await cq.answer()
 
@@ -166,7 +164,7 @@ async def collection_selected(bot, cq):
 async def cancel_pending(bot, message):
     had = PENDING.pop(message.from_user.id, None) or CHOOSING_COLLECTION.pop(message.from_user.id, None)
     if had:
-        await message.reply("❌ Cancel कर दिया गया।")
+        await message.reply("❌ Cancelled.")
 
 
 @Client.on_message(
@@ -175,11 +173,11 @@ async def cancel_pending(bot, message):
 async def receive_new_url(bot, message):
     pending = PENDING.get(message.from_user.id)
     if not pending:
-        return  # इस यूज़र का कोई pending action नहीं — दूसरे handlers के लिए छोड़ दें
+        return  # no pending action for this user — let other handlers process this message
 
     parts = message.text.strip().split()
     if not parts or not parts[0].startswith("mongodb"):
-        return await message.reply("⚠️ यह सही MongoDB URI नहीं लग रहा। दोबारा भेजें, या <code>/cancel</code> करें।")
+        return await message.reply("⚠️ That doesn't look like a valid MongoDB URI. Send again, or /cancel.")
 
     new_url = parts[0]
     db_name = parts[1] if len(parts) > 1 else DATABASE_NAME
@@ -187,9 +185,12 @@ async def receive_new_url(bot, message):
     target_collection = pending.get("collection")
     PENDING.pop(message.from_user.id, None)
 
-    label = {"copy_db": "Copy Database", "copy_collection": f"Copy Collection ({target_collection})",
-              "migrate": "Migration"}[action]
-    status = await message.reply(f"🚚 <b>{label} शुरू हो रहा है...</b>\n\nनए DB से कनेक्ट किया जा रहा है...")
+    label = {
+        "copy_db": "Copy Database",
+        "copy_collection": f"Copy Collection ({target_collection})",
+        "migrate": "Migration",
+    }[action]
+    status = await message.reply(f"🚚 Starting {label}...\n\nConnecting to the new DB...")
 
     src = SOURCE.get(message.from_user.id, {"url": DATABASE_URL, "db_name": DATABASE_NAME})
     try:
@@ -199,16 +200,18 @@ async def receive_new_url(bot, message):
         new_db = new_client[db_name]
         await new_client.admin.command("ping")
     except Exception as e:
-        return await status.edit(f"❌ <b>नए DB से कनेक्ट नहीं हो पाया (Auth/Network Error):</b>\n<code>{e}</code>\n\n"
-                                  f"👉 Atlas में Network Access में <code>0.0.0.0/0</code> जुड़ा है ना, चेक कर लें।")
+        return await status.edit(
+            f"❌ Could not connect to the new DB (Auth/Network Error):\n{e}\n\n"
+            f"👉 Make sure 0.0.0.0/0 is whitelisted in Atlas Network Access."
+        )
 
     all_collections = await old_db.list_collection_names()
     if not all_collections:
-        return await status.edit("❌ पुराने DB में कोई collection नहीं मिली।")
+        return await status.edit("❌ No collections found in the source DB.")
 
     if action == "copy_collection":
         if target_collection not in all_collections:
-            return await status.edit(f"❌ Collection <code>{target_collection}</code> अब मौजूद नहीं है।")
+            return await status.edit(f"❌ Collection '{target_collection}' no longer exists.")
         collections_to_copy = [target_collection]
     else:
         collections_to_copy = all_collections
@@ -219,20 +222,21 @@ async def receive_new_url(bot, message):
     for col_name in collections_to_copy:
         old_col = old_db[col_name]
         new_col = new_db[col_name]
-        total = await old_col.count_documents({})
+        total = await old_col.estimated_document_count()
         copied, batch = 0, []
 
-        async for doc in old_col.find({}):
+        # larger cursor batch_size = fewer round-trips to the source DB
+        async for doc in old_col.find({}, batch_size=BATCH_SIZE):
             batch.append(doc)
             if len(batch) >= BATCH_SIZE:
                 copied += await _insert_batch(new_col, batch)
                 batch = []
-                if time.time() - last_edit > 4:
+                if time.time() - last_edit > STATUS_EDIT_INTERVAL:
                     last_edit = time.time()
                     try:
                         await status.edit(
-                            f"🚚 <b>{label} जारी है...</b>\n\n"
-                            f"📂 <code>{col_name}</code>: {copied}/{total}\n"
+                            f"🚚 {label} in progress...\n\n"
+                            f"📁 {col_name}: {copied}/{total}\n"
                             f"{_progress_bar(copied, total)}"
                         )
                     except Exception:
@@ -241,11 +245,23 @@ async def receive_new_url(bot, message):
         if batch:
             copied += await _insert_batch(new_col, batch)
 
+        # copy non-default indexes so the new collection performs the same
+        try:
+            existing_indexes = await new_col.index_information()
+            async for index in old_col.list_indexes():
+                if index["name"] == "_id_" or index["name"] in existing_indexes:
+                    continue
+                keys = list(index["key"].items())
+                opts = {k: v for k, v in index.items() if k not in ("key", "v", "ns")}
+                await new_col.create_index(keys, **opts)
+        except Exception:
+            pass  # index copy is best-effort, never block the data copy
+
         grand_total += copied
         try:
             await status.edit(
-                f"✅ <code>{col_name}</code> पूरा: {copied}/{total}\n{_progress_bar(copied, total)}\n\n"
-                f"⏳ अगली collection की तरफ़..."
+                f"✅ {col_name} done: {copied}/{total}\n{_progress_bar(copied, total)}\n\n"
+                f"⏳ Moving to next collection..."
             )
         except Exception:
             pass
@@ -255,35 +271,35 @@ async def receive_new_url(bot, message):
 
     if action == "migrate":
         final_text = (
-            f"🎉 <b>Migration पूरा हुआ!</b>\n\n"
-            f"📦 कुल collections: <code>{len(collections_to_copy)}</code>\n"
-            f"📄 कुल documents कॉपी हुए: <code>{grand_total}</code>\n\n"
-            f"👉 अब Koyeb में <b>DATABASE_URL</b> env var को नए वाले से बदलें और बॉट restart करें।\n"
-            f"⚠️ फिर यह मैसेज Delete करें और यह फाइल plugins से हटाकर restart करें।"
+            f"🎉 Migration complete!\n\n"
+            f"📦 Collections: {len(collections_to_copy)}\n"
+            f"📄 Documents copied: {grand_total}\n\n"
+            f"👉 Now update DATABASE_URL in Koyeb to the new URI and restart the bot.\n"
+            f"⚠️ Then delete this message and remove this file from plugins."
         )
     elif action == "copy_collection":
         final_text = (
-            f"🎉 <b>Collection Copy बन गई!</b>\n\n"
-            f"📂 Collection: <code>{target_collection}</code>\n"
-            f"📄 Documents कॉपी हुए: <code>{grand_total}</code>\n\n"
-            f"ℹ️ पुराना DB जैसा का वैसा चालू है, कुछ बदलने की ज़रूरत नहीं।\n"
-            f"⚠️ यह मैसेज Delete करें (इसमें नया password था)।"
+            f"🎉 Collection copy complete!\n\n"
+            f"📁 Collection: {target_collection}\n"
+            f"📄 Documents copied: {grand_total}\n\n"
+            f"ℹ️ The original DB is untouched, nothing else to change.\n"
+            f"⚠️ Delete this message (it contains a password)."
         )
     else:
         final_text = (
-            f"🎉 <b>Database Copy बन गई!</b>\n\n"
-            f"📦 कुल collections: <code>{len(collections_to_copy)}</code>\n"
-            f"📄 कुल documents कॉपी हुए: <code>{grand_total}</code>\n\n"
-            f"ℹ️ पुराना DB जैसा का वैसा चालू है, कुछ बदलने की ज़रूरत नहीं।\n"
-            f"नया DB सिर्फ़ बैकअप/कॉपी के तौर पर तैयार है।\n"
-            f"⚠️ यह मैसेज Delete करें (इसमें नया password था)।"
+            f"🎉 Database copy complete!\n\n"
+            f"📦 Collections: {len(collections_to_copy)}\n"
+            f"📄 Documents copied: {grand_total}\n\n"
+            f"ℹ️ The original DB is untouched, nothing else to change.\n"
+            f"The new DB is just a ready backup/copy.\n"
+            f"⚠️ Delete this message (it contains a password)."
         )
 
     await status.edit(final_text)
 
 
 async def _insert_batch(new_col, batch):
-    """duplicate _id (re-run की स्थिति में) पर पूरा batch fail न हो"""
+    """ordered=False so a duplicate _id (e.g. on re-run) doesn't fail the whole batch"""
     try:
         res = await new_col.insert_many(batch, ordered=False)
         return len(res.inserted_ids)
