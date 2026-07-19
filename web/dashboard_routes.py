@@ -230,7 +230,22 @@ function next(){if(nextOff){curPage++;doSearch(nextOff);scrollTo(0,0);}}
 function prev(){if(curPage>1){curPage--;doSearch(Math.max(0,curOff-LIMIT_VAL));scrollTo(0,0);}}
 
 document.addEventListener('DOMContentLoaded',function(){
-    var q=document.getElementById('q');if(q)q.addEventListener('keydown',function(e){if(e.key==='Enter')doSearch(0);});
+    var q=document.getElementById('q');
+    if(q){
+        var qLiveTimer;
+        q.addEventListener('input',function(){
+            clearTimeout(qLiveTimer);
+            var val=q.value.trim();
+            if(!val){
+                curQ='';
+                var rd=document.getElementById('results');if(rd)rd.innerHTML='';
+                var ri=document.getElementById('resInfo');if(ri)ri.style.display='none';
+                return;
+            }
+            qLiveTimer=setTimeout(function(){doSearch(0);},400);
+        });
+        q.addEventListener('keydown',function(e){if(e.key==='Enter'){clearTimeout(qLiveTimer);doSearch(0);}});
+    }
     if(pMode==='none'){
         var mItems=document.querySelectorAll('#cddModeMenu .cdd-item');
         mItems.forEach(function(i){i.classList.remove('selected');if(i.dataset.val===pMode)i.classList.add('selected');});
@@ -248,7 +263,6 @@ SEARCH_ZONE = (
             '<div class="search-wrap">'
                 '<input class="search-input" id="q" placeholder="Titles, people, genres\u2026">'
             '</div>'
-            '<button class="search-btn" id="searchBtn" onclick="doSearch(0);triggerRipple(this)">Search</button>'
         '</div>'
         '<div class="search-row2">'
             '<div class="cdd-wrap" id="cddColWrap">'
