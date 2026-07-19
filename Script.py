@@ -31,6 +31,12 @@ class script(object):
 <b>📱 Apps:</b> <code>{}</code>
 <b>🌐 Websites:</b> <code>{}</code></blockquote>
 
+<b>📝 <u>Posts CMS (Total: {}):</u></b>
+<blockquote><b>🎬 Movies:</b> <code>{}</code>
+<b>📺 Web Series:</b> <code>{}</code>
+<b>📱 App Video:</b> <code>{}</code>
+<b>🔞 Porn:</b> <code>{}</code></blockquote>
+
 <b>⚙️ <u>Engine Metrics:</u></b>
 <blockquote><b>🖼️ Global Thumbs:</b> <code>{}</code>
 <b>⏱️ Uptime:</b> <code>{}</code></blockquote>"""
@@ -49,6 +55,8 @@ class script(object):
 <b>🎭 Actors:</b> <code>{}</code>
 <b>📱 Apps:</b> <code>{}</code>
 <b>🌐 Websites:</b> <code>{}</code></blockquote>
+
+<b>📝 <u>Posts Published:</u></b> <code>{}</code>
 
 <b>⏱️ System Running Since:</b> <code>{}</code>"""
 
