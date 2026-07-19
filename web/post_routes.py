@@ -176,8 +176,8 @@ async def create_post_page(req):
                 <div class="step-header" style="border-bottom-color:var(--accent);"><span class="step-num" style="background:var(--accent);">4</span><span class="step-title">Videos / Episodes</span></div>
                 <div class="step-body">
                     <div style="display:flex; gap:10px; margin-bottom:15px;">
-                        <input type="text" id="videoSearchInput" placeholder="Search files in database..." class="s-input" style="margin-bottom:0;" onkeydown="if(event.key==='Enter'){{ event.preventDefault(); searchVideosForPost(); }}">
-                        <button type="button" onclick="searchVideosForPost()" style="background:var(--bg3); color:var(--text); border:1px solid var(--border); padding:0 20px; border-radius:8px; font-weight:800; cursor:pointer;">Search</button>
+                        <input type="text" id="videoSearchInput" placeholder="Search files in database..." class="s-input" style="margin-bottom:0;" onkeydown="if(event.key==='Enter'){{ event.preventDefault(); clearTimeout(window.__vsTimer); searchVideosForPost(); }}" oninput="clearTimeout(window.__vsTimer); if(!this.value.trim()){{ var rd=document.getElementById('videoSearchResults'); if(rd) rd.style.display='none'; }} else {{ window.__vsTimer=setTimeout(searchVideosForPost,400); }}">
+                        
                     </div>
                     <div id="videoSearchResults" style="background:var(--bg); border-radius:8px; max-height:200px; overflow-y:auto; display:none; margin-bottom:20px; border:1px solid var(--border);"></div>
                     
@@ -289,8 +289,8 @@ async def edit_post_page(req):
                 <div class="step-header" style="border-bottom-color:var(--accent);"><span class="step-num" style="background:var(--accent);">4</span><span class="step-title">Videos / Episodes</span></div>
                 <div class="step-body">
                     <div style="display:flex; gap:10px; margin-bottom:15px;">
-                        <input type="text" id="videoSearchInput" placeholder="Search files in database..." class="s-input" style="margin-bottom:0;" onkeydown="if(event.key==='Enter'){{ event.preventDefault(); searchVideosForPost(); }}">
-                        <button type="button" onclick="searchVideosForPost()" style="background:var(--bg3); color:var(--text); border:1px solid var(--border); padding:0 20px; border-radius:8px; font-weight:800; cursor:pointer;">Search</button>
+                        <input type="text" id="videoSearchInput" placeholder="Search files in database..." class="s-input" style="margin-bottom:0;" onkeydown="if(event.key==='Enter'){{ event.preventDefault(); clearTimeout(window.__vsTimer); searchVideosForPost(); }}" oninput="clearTimeout(window.__vsTimer); if(!this.value.trim()){{ var rd=document.getElementById('videoSearchResults'); if(rd) rd.style.display='none'; }} else {{ window.__vsTimer=setTimeout(searchVideosForPost,400); }}">
+                        
                     </div>
                     <div id="videoSearchResults" style="background:var(--bg); border-radius:8px; max-height:200px; overflow-y:auto; display:none; margin-bottom:20px; border:1px solid var(--border);"></div>
                     
@@ -484,7 +484,6 @@ async def posts_directory_page(req):
     <div class="search-box">
         <div class="s-row-1">
             <input type="text" id="post_q" class="s-input" placeholder="Search movies, series, posts...">
-            <button class="s-btn" onclick="resetPost(); searchPosts()">Search</button>
         </div>
         <div class="s-row-2">
             <div class="cdd-wrap" onclick="togglePostCDD('view', event)">
@@ -617,7 +616,12 @@ async def posts_directory_page(req):
     function resetPost() {{ pOff = 0; pPage = 1; }}
     function nextPost() {{ if(pNext) {{ pOff += pLim; pPage++; searchPosts(); window.scrollTo(0, 50); }} }}
     function prevPost() {{ if(pOff > 0) {{ pOff = Math.max(0, pOff - pLim); pPage--; searchPosts(); window.scrollTo(0, 50); }} }}
-    document.getElementById('post_q').addEventListener('keydown', function(e) {{ if(e.key === 'Enter') {{ resetPost(); searchPosts(); }} }});
+    document.getElementById('post_q').addEventListener('keydown', function(e) {{ if(e.key === 'Enter') {{ clearTimeout(postLiveTimer); resetPost(); searchPosts(); }} }});
+    var postLiveTimer;
+    document.getElementById('post_q').addEventListener('input', function() {{
+        clearTimeout(postLiveTimer);
+        postLiveTimer = setTimeout(function() {{ resetPost(); searchPosts(); }}, 400);
+    }});
     </script>'''
 
     return build_page("Posts Catalog", f'<div class="main" style="padding-top:20px; max-width:1100px; margin:0 auto; padding-left:20px; padding-right:20px;">{search_ui}{initial_grid}{js_logic}</div>', "", "posts", role)
