@@ -66,9 +66,9 @@ class script(object):
 
     WELCOME_TEXT = """👋 Hello {mention}, Welcome to {title} group! 💞"""
 
-    HELP_TXT = """<b>👋 Hello {},
+    HELP_TXT = """<blockquote><b>👋 Hello {},</b></blockquote>
 
-Fast. Smart. Powerful.
+<b>Fast. Smart. Powerful.
 
 Choose a category below. 👇</b>"""
 
