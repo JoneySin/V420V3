@@ -71,14 +71,23 @@ POST_WIZARD_CSS = '''
 # यह constant सीधा JS string है (कोई .format()/f-string नहीं), इसलिए ${...} literal ही रहता है।
 POST_WIZARD_JS = '''
     <script>
+    var videoSearchReqId = 0;
     async function searchVideosForPost() {
         const q = document.getElementById('videoSearchInput').value.trim();
-        if(!q) return;
+        if(!q) { videoSearchReqId++; document.getElementById('videoSearchResults').style.display = 'none'; return; }
+        const myReq = ++videoSearchReqId;
         const resDiv = document.getElementById('videoSearchResults');
-        resDiv.style.display = 'block'; resDiv.innerHTML = '<div style="padding:15px; color:var(--muted); text-align:center; font-size:12px;">🔍 Searching...</div>';
+        const spinTimer = setTimeout(() => {
+            if (myReq !== videoSearchReqId) return;
+            resDiv.style.display = 'block'; resDiv.innerHTML = '<div style="padding:15px; color:var(--muted); text-align:center; font-size:12px;">🔍 Searching...</div>';
+        }, 200);
         try {
             const response = await fetch('/api/search?q=' + encodeURIComponent(q) + '&mode=none');
+            if (myReq !== videoSearchReqId) { clearTimeout(spinTimer); return; }
+            clearTimeout(spinTimer);
             const data = await response.json();
+            if (myReq !== videoSearchReqId) return;
+            resDiv.style.display = 'block';
             if(!data.results || data.results.length === 0) { resDiv.innerHTML = '<div style="padding:15px; color:var(--muted); text-align:center; font-size:12px;">❌ No files found.</div>'; return; }
             let html = '';
             data.results.forEach(f => {
@@ -176,7 +185,7 @@ async def create_post_page(req):
                 <div class="step-header" style="border-bottom-color:var(--accent);"><span class="step-num" style="background:var(--accent);">4</span><span class="step-title">Videos / Episodes</span></div>
                 <div class="step-body">
                     <div style="display:flex; gap:10px; margin-bottom:15px;">
-                        <input type="text" id="videoSearchInput" placeholder="Search files in database..." class="s-input" style="margin-bottom:0;" onkeydown="if(event.key==='Enter'){{ event.preventDefault(); clearTimeout(window.__vsTimer); searchVideosForPost(); }}" oninput="clearTimeout(window.__vsTimer); if(!this.value.trim()){{ var rd=document.getElementById('videoSearchResults'); if(rd) rd.style.display='none'; }} else {{ window.__vsTimer=setTimeout(searchVideosForPost,400); }}">
+                        <input type="text" id="videoSearchInput" placeholder="Search files in database..." class="s-input" style="margin-bottom:0;" onkeydown="if(event.key==='Enter'){{ event.preventDefault(); clearTimeout(window.__vsTimer); searchVideosForPost(); }}" oninput="clearTimeout(window.__vsTimer); if(this.value.trim().length<2){{ window.videoSearchReqId = (window.videoSearchReqId||0)+1; var rd=document.getElementById('videoSearchResults'); if(rd) rd.style.display='none'; }} else {{ window.__vsTimer=setTimeout(searchVideosForPost,350); }}">
                         
                     </div>
                     <div id="videoSearchResults" style="background:var(--bg); border-radius:8px; max-height:200px; overflow-y:auto; display:none; margin-bottom:20px; border:1px solid var(--border);"></div>
@@ -289,7 +298,7 @@ async def edit_post_page(req):
                 <div class="step-header" style="border-bottom-color:var(--accent);"><span class="step-num" style="background:var(--accent);">4</span><span class="step-title">Videos / Episodes</span></div>
                 <div class="step-body">
                     <div style="display:flex; gap:10px; margin-bottom:15px;">
-                        <input type="text" id="videoSearchInput" placeholder="Search files in database..." class="s-input" style="margin-bottom:0;" onkeydown="if(event.key==='Enter'){{ event.preventDefault(); clearTimeout(window.__vsTimer); searchVideosForPost(); }}" oninput="clearTimeout(window.__vsTimer); if(!this.value.trim()){{ var rd=document.getElementById('videoSearchResults'); if(rd) rd.style.display='none'; }} else {{ window.__vsTimer=setTimeout(searchVideosForPost,400); }}">
+                        <input type="text" id="videoSearchInput" placeholder="Search files in database..." class="s-input" style="margin-bottom:0;" onkeydown="if(event.key==='Enter'){{ event.preventDefault(); clearTimeout(window.__vsTimer); searchVideosForPost(); }}" oninput="clearTimeout(window.__vsTimer); if(this.value.trim().length<2){{ window.videoSearchReqId = (window.videoSearchReqId||0)+1; var rd=document.getElementById('videoSearchResults'); if(rd) rd.style.display='none'; }} else {{ window.__vsTimer=setTimeout(searchVideosForPost,350); }}">
                         
                     </div>
                     <div id="videoSearchResults" style="background:var(--bg); border-radius:8px; max-height:200px; overflow-y:auto; display:none; margin-bottom:20px; border:1px solid var(--border);"></div>
@@ -542,6 +551,7 @@ async def posts_directory_page(req):
 
     <script>
     var pOff = 0, pLim = 20, pPage = 1;
+    var postReqId = 0;
     var pNext = {has_nxt_str};
     var currentPCat = 'All'; var currentPView = 'poster';
     var lastPQ = "", lastPCat = "All", lastPView = "poster", lastPOff = 0;
@@ -600,11 +610,18 @@ async def posts_directory_page(req):
         sessionStorage.setItem('ff_post_off', pOff);
         sessionStorage.setItem('ff_post_page', pPage);
 
+        var myReq = ++postReqId;
         var grid = document.getElementById('post_grid_container');
-        grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--muted); font-weight:bold;">🔄 Searching Catalog...</div>';
+        var spinTimer = setTimeout(function() {{
+            if (myReq !== postReqId) return;
+            grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--muted); font-weight:bold;">🔄 Searching Catalog...</div>';
+        }}, 200);
         try {{
             var res = await fetch(`/api/posts/search?q=${{encodeURIComponent(q)}}&offset=${{pOff}}&category=${{encodeURIComponent(currentPCat)}}`);
+            if (myReq !== postReqId) {{ clearTimeout(spinTimer); return; }}
+            clearTimeout(spinTimer);
             var data = await res.json();
+            if (myReq !== postReqId) return;
             grid.innerHTML = data.html;
             staggerCards(grid);
             pNext = data.has_next;
@@ -620,7 +637,14 @@ async def posts_directory_page(req):
     var postLiveTimer;
     document.getElementById('post_q').addEventListener('input', function() {{
         clearTimeout(postLiveTimer);
-        postLiveTimer = setTimeout(function() {{ resetPost(); searchPosts(); }}, 400);
+        var val = this.value.trim();
+        if (!val) {{
+            postReqId++;
+            var g = document.getElementById('post_grid_container'); if (g) g.innerHTML = '';
+            var pb = document.getElementById('post_pg_box'); if (pb) pb.style.display = 'none';
+            return;
+        }}
+        postLiveTimer = setTimeout(function() {{ resetPost(); searchPosts(); }}, 350);
     }});
     </script>'''
 
