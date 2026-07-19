@@ -463,9 +463,12 @@ async def posts_directory_page(req):
             .dir-grid {{ grid-template-columns: repeat(5, 1fr); gap: 20px; }} 
         }} 
         .search-box {{ background:var(--card); border:1px solid var(--border); padding:16px; border-radius:12px; margin-bottom:25px; box-shadow:0 4px 15px rgba(0,0,0,0.1); }} 
-        .s-row-1 {{ display: flex; gap: 10px; margin-bottom: 12px; }}
+        .s-row-1 {{ display: flex; gap: 10px; margin-bottom: 12px; position: relative; }}
         .s-input {{ flex: 1; background:var(--bg3); border:1px solid var(--border); padding:12px 16px; color:var(--text); border-radius:8px; outline:none; font-family:inherit; font-weight:600; font-size:14px; transition:0.2s; }}
         .s-input:focus {{ border-color:var(--accent); }}
+        .s-spinner {{ display:none; position:absolute; right:14px; top:50%; transform:translateY(-50%); width:16px; height:16px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:sSpin .6s linear infinite; }}
+        .s-row-1.loading .s-spinner {{ display:block; }}
+        @keyframes sSpin {{ to {{ transform:translateY(-50%) rotate(360deg); }} }}
         .s-btn {{ background:var(--accent); color:#fff; border:none; padding:0 24px; border-radius:8px; font-weight:800; cursor:pointer; transition:0.2s; white-space:nowrap; }}
         .s-btn:hover {{ background:var(--accent-hover); transform:scale(1.02); }}
         
@@ -491,8 +494,9 @@ async def posts_directory_page(req):
     </style>
     
     <div class="search-box">
-        <div class="s-row-1">
+        <div class="s-row-1" id="postSearchRow">
             <input type="text" id="post_q" class="s-input" placeholder="Search movies, series, posts...">
+            <span class="s-spinner" id="postSpinner"></span>
         </div>
         <div class="s-row-2">
             <div class="cdd-wrap" onclick="togglePostCDD('view', event)">
@@ -612,14 +616,16 @@ async def posts_directory_page(req):
 
         var myReq = ++postReqId;
         var grid = document.getElementById('post_grid_container');
-        var spinTimer = setTimeout(function() {{
+        var row = document.getElementById('postSearchRow');
+        var loadTimer = setTimeout(function() {{
             if (myReq !== postReqId) return;
-            grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--muted); font-weight:bold;">🔄 Searching Catalog...</div>';
-        }}, 200);
+            if (row) row.classList.add('loading');
+        }}, 150);
         try {{
             var res = await fetch(`/api/posts/search?q=${{encodeURIComponent(q)}}&offset=${{pOff}}&category=${{encodeURIComponent(currentPCat)}}`);
-            if (myReq !== postReqId) {{ clearTimeout(spinTimer); return; }}
-            clearTimeout(spinTimer);
+            if (myReq !== postReqId) {{ clearTimeout(loadTimer); if (row) row.classList.remove('loading'); return; }}
+            clearTimeout(loadTimer);
+            if (row) row.classList.remove('loading');
             var data = await res.json();
             if (myReq !== postReqId) return;
             grid.innerHTML = data.html;
@@ -627,7 +633,7 @@ async def posts_directory_page(req):
             pNext = data.has_next;
             applyPostViewMode();
             updatePgUI();
-        }} catch(e) {{ grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--accent);">Error loading posts!</div>'; }}
+        }} catch(e) {{ clearTimeout(loadTimer); if (row) row.classList.remove('loading'); grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--accent);">Error loading posts!</div>'; }}
     }}
     function updatePgUI() {{ var box = document.getElementById('post_pg_box'); box.style.display = (pOff === 0 && !pNext) ? 'none' : 'flex'; document.getElementById('post_pBtn').disabled = (pOff === 0); document.getElementById('post_nBtn').disabled = !pNext; document.getElementById('post_pgInfo').innerText = 'Page ' + pPage; }}
     function resetPost() {{ pOff = 0; pPage = 1; }}
@@ -640,6 +646,7 @@ async def posts_directory_page(req):
         var val = this.value.trim();
         if (!val) {{
             postReqId++;
+            var row = document.getElementById('postSearchRow'); if (row) row.classList.remove('loading');
             var g = document.getElementById('post_grid_container'); if (g) g.innerHTML = '';
             var pb = document.getElementById('post_pg_box'); if (pb) pb.style.display = 'none';
             return;
