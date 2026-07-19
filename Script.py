@@ -67,12 +67,10 @@ class script(object):
     WELCOME_TEXT = """👋 Hello {mention}, Welcome to {title} group! 💞"""
 
     HELP_TXT = """<b>👋 Hello {},
-    
-I can filter any movie and series you want.
-Just type the movie or series name in my PM, open our Mini App, or add me into your group!
 
-I have many more features for you.
-Please check the commands below 👇</b>"""
+Fast. Smart. Powerful.
+
+Choose a category below. 👇</b>"""
 
     ADMIN_COMMAND_TXT = """<b>👑 <u>Bot Admin Commands:</u> 👇
 
