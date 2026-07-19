@@ -163,10 +163,18 @@ async function doSearch(o,allowEmpty){
         if(myReq!==searchReqId){clearTimeout(loadTimer);if(qWrap)qWrap.classList.remove('loading');return;}
         clearTimeout(loadTimer);
         if(qWrap)qWrap.classList.remove('loading');
-        if(!r.ok){showToast('Error fetching','error');return;}
-        var d=await r.json();
+        var d=null;
+        try{d=await r.json();}catch(parseErr){d=null;}
         if(myReq!==searchReqId)return;
-        if(d.error){showToast(d.error,'error');return;}
+        if(!r.ok || (d && d.error)){
+            var msg=(d && d.error)?d.error:('Error fetching (HTTP '+r.status+')');
+            showToast(msg,'error');
+            if(!allowEmpty || q){
+                resDiv.innerHTML='<div class="empty"><div class="empty-icon">&#9888;</div><p>'+msg+'</p></div>';
+                document.getElementById('pageBox').style.display='none';
+            }
+            return;
+        }
         document.getElementById('resInfo').style.display='none';
         if(!d.results||!d.results.length){
             resDiv.innerHTML = q
