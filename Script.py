@@ -72,30 +72,30 @@ Fast. Smart. Powerful.
 
 Choose a category below. 👇</b>"""
 
-    ADMIN_COMMAND_TXT = """<b>👑 <u>Bot Admin Commands:</u> 👇
+    ADMIN_COMMAND_TXT = """<blockquote><b>👑 <u>Bot Admin Commands:</u> 👇</b></blockquote>
 
-• /stats - View database & user stats
-• /delete - Delete specific files from DB
-• /delete_all - Wipe entire collection
-• /add_prm - Grant premium manually
-• /rm_prm - Revoke premium status
-• /prm_list - Export premium users list
-• /web_users - View Web Dashboard users
-• /warmup_thumbs - Update Thumbnails
-• /restart - Hard restart the bot session
+• /stats - Database stats
+• /delete - Delete file
+• /delete_all - Clear collection
+• /add_prm - Add premium
+• /rm_prm - Remove premium
+• /prm_list - Premium users
+• /web_users - Web users
+• /warmup_thumbs - Refresh thumbnails
+• /restart - Restart bot
 
-⚙️ <u>Group Management Guide:</u> 👇
+<blockquote><b>⚙️ <u>Group Management Guide:</u> 👇</b></blockquote>
 
-• /search on | off - Toggle Auto Filter
-• /settings - Open Group Settings UI
-• /button_style - Switch results mode
-• /mute | /unmute - Restrict group user
-• /ban - Ban user permanently from group
-• /warn | /resetwarn - Manage warnings
-• /addblacklist | /removeblacklist - Words
-• /blacklist - View blacklisted keywords
+• /search - Auto Filter
+• /settings - Group settings
+• /button_style - Result style
+• /mute | /unmute - Mute user
+• /ban - Ban user
+• /warn | /resetwarn - Warnings
+• /addblacklist | /removeblacklist - Blacklist words
+• /blacklist - View blacklist
 • /dlink | /removedlink - Auto-delete words
-• /dlinklist - View auto-delete triggers</b>"""
+• /dlinklist - Delete triggers"""
     
     PLAN_TXT = """💎 <b>Fast Finder Premium Plans</b> 💎
 
@@ -112,14 +112,14 @@ Activate a premium plan to unlock exclusive, high-speed features!
 
 👨‍🚒 <b>Support & Verification:</b> {}"""
 
-    USER_COMMAND_TXT = """<b>👨‍💻 <u>Bot User Commands:</u> 👇
+    USER_COMMAND_TXT = """<blockquote><b>👨‍💻 <u>Bot User Commands:</u> 👇</b></blockquote>
 
-• /start - Check if bot is alive and open Main Menu
-• /plan - View premium membership plan details
-• /myplan - Check your remaining premium duration
-• /id - Extract User ID, Chat ID, and message details
-• /fileid - Reply to media to extract its Telegram File ID
-• /ask or /ai - Chat with Gemini 2.5 Flash AI Assistant (10m Memory)</b>"""
+• /start - Main menu
+• /plan - Premium plans
+• /myplan - Premium status
+• /id - User & Chat ID
+• /fileid - Media File ID
+• /ask or /ai - AI Assistant"""
 
     LOG_INDEX_TXT = """📢 <b>#Indexing_Report 📊</b>
 
