@@ -71,6 +71,7 @@ CARD_CSS = """
 # ─────────────────────────────────────────────────────────────────────────────
 JS_ENGINE = """
 var curQ='',curOff=0,nextOff='',curCol='all',curPage=1;
+var searchReqId=0;
 var pMode=localStorage.getItem('posterMode')||'tg';
 var LIMIT_VAL = __LIMIT_PLACEHOLDER__;
 
@@ -146,14 +147,21 @@ async function doSearch(o){
     if(!q){showToast('Please enter a movie name','error');return;}
     curQ=q;curOff=o;if(o===0)curPage=1;
 
+    var myReq=++searchReqId;
     var resDiv=document.getElementById('results');
-    resDiv.className='res-grid mode-'+pMode;
-    resDiv.innerHTML='<div class="spin-wrap"><div class="spinner"></div><span>Searching...</span></div>';
+    var spinTimer=setTimeout(function(){
+        if(myReq!==searchReqId)return;
+        resDiv.className='res-grid mode-'+pMode;
+        resDiv.innerHTML='<div class="spin-wrap"><div class="spinner"></div><span>Searching...</span></div>';
+    },200);
 
     try{
         var r=await fetch('/api/search?q='+encodeURIComponent(q)+'&offset='+o+'&col='+curCol+'&mode='+pMode);
+        if(myReq!==searchReqId){clearTimeout(spinTimer);return;}
+        clearTimeout(spinTimer);
         if(!r.ok){showToast('Error fetching','error');return;}
         var d=await r.json();
+        if(myReq!==searchReqId)return;
         if(d.error){showToast(d.error,'error');return;}
         document.getElementById('resInfo').style.display='none';
         if(!d.results||!d.results.length){
@@ -236,13 +244,15 @@ document.addEventListener('DOMContentLoaded',function(){
         q.addEventListener('input',function(){
             clearTimeout(qLiveTimer);
             var val=q.value.trim();
-            if(!val){
+            if(val.length<2){
+                searchReqId++;
                 curQ='';
                 var rd=document.getElementById('results');if(rd)rd.innerHTML='';
                 var ri=document.getElementById('resInfo');if(ri)ri.style.display='none';
+                var pb=document.getElementById('pageBox');if(pb)pb.style.display='none';
                 return;
             }
-            qLiveTimer=setTimeout(function(){doSearch(0);},400);
+            qLiveTimer=setTimeout(function(){doSearch(0);},350);
         });
         q.addEventListener('keydown',function(e){if(e.key==='Enter'){clearTimeout(qLiveTimer);doSearch(0);}});
     }
